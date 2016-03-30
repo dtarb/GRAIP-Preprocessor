@@ -141,7 +141,7 @@ class DefineValueDialog(QDialog):
         self.missing_field_name = missing_field_name
         self.form_layout = QFormLayout()
         v_main_layout = QVBoxLayout()
-        self.radio_btn_use_default = QRadioButton("Use defualt value")
+        self.radio_btn_use_default = QRadioButton("Use default value")
         # set this radio button as checked
         self.radio_btn_use_default.toggle()
         self.radio_btn_reassign = QRadioButton("Reassign this value to an existing value in definitions table")
@@ -160,52 +160,31 @@ class DefineValueDialog(QDialog):
         self.label_definitions = QLabel("Definitions")
         self.cmb_definitions = QComboBox()
         h_layout_definitions.addWidget(self.label_definitions)
-        h_layout_definitions.addWidget((self.cmb_definitions))
+        h_layout_definitions.addWidget(self.cmb_definitions)
         v_main_layout.addLayout(h_layout_definitions)
         v_main_layout.addWidget(self.radio_btn_add_new)
 
         self.grp_box_new_entry = QGroupBox()
         grid_layout_new_entry = QGridLayout()
-        v_layout_new_entry = QVBoxLayout()
-        h_layout_table_name = QHBoxLayout()
         self.label_table_name = QLabel("Table Name")
         self.line_edit_table_name = QLineEdit()
         grid_layout_new_entry.addWidget(self.label_table_name, 0, 0)
         grid_layout_new_entry.addWidget(self.line_edit_table_name, 0, 1)
 
-        # h_layout_table_name.addWidget(self.label_table_name)
-        # h_layout_table_name.addWidget(self.line_edit_table_name)
-        # v_layout_new_entry.addLayout(h_layout_table_name)
-
-        h_layout_id = QHBoxLayout()
         self.label_id = QLabel("ID")
         self.line_edit_id = QLineEdit()
         grid_layout_new_entry.addWidget(self.label_id, 1, 0)
         grid_layout_new_entry.addWidget(self.line_edit_id, 1, 1)
 
-        # h_layout_id.addWidget(self.label_id)
-        # h_layout_id.addWidget(self.line_edit_id)
-        # v_layout_new_entry.addLayout(h_layout_id)
-
-        h_layout_def = QHBoxLayout()
         self.label_def = QLabel("Definition")
         self.line_edit_def = QLineEdit()
         grid_layout_new_entry.addWidget(self.label_def, 2, 0)
         grid_layout_new_entry.addWidget(self.line_edit_def, 2, 1)
 
-        # h_layout_def.addWidget(self.label_def)
-        # h_layout_def.addWidget(self.line_edit_def)
-        # v_layout_new_entry.addLayout(h_layout_def)
-
-        h_layout_description = QHBoxLayout()
         self.label_description = QLabel("Description")
         self.line_edit_description = QLineEdit()
         grid_layout_new_entry.addWidget(self.label_description, 3, 0)
         grid_layout_new_entry.addWidget(self.line_edit_description, 3, 1)
-
-        # h_layout_description.addWidget(self.label_description)
-        # h_layout_description.addWidget(self.line_edit_description)
-        # v_layout_new_entry.addLayout(h_layout_description)
 
         self.grp_box_new_entry.setLayout(grid_layout_new_entry)
         v_main_layout.addWidget(self.grp_box_new_entry)
@@ -227,6 +206,14 @@ class DefineValueDialog(QDialog):
         self.resize(600, 300)
         self.setLayout(self.form_layout)
         self.setModal(True)
+
+    def accept(self, *args, **kwargs):
+        # This function is called when the OK button of this dialog is clicked
+        # TODO: Here we need to do processing based on the data entered on the dialogbox
+
+        print ("You clicked OK")
+        super(DefineValueDialog, self).accept()
+
 
 class TableModel(QAbstractTableModel):
     """
