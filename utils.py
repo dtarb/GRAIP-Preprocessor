@@ -1,8 +1,24 @@
 import os
+import time
+
+import pyodbc
+from osgeo import ogr, gdal, osr
+from gdalconst import *
 
 from PySide.QtGui import *
 from PySide.QtCore import *
 
+MS_ACCESS_CONNECTION = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=%s;"
+
+
+class GDALFileDriver(object):
+    @classmethod
+    def ShapeFile(cls):
+        return "ESRI Shapefile"
+
+    @classmethod
+    def TifFile(cls):
+        return "GTiff"
 
 class FileDialog(QFileDialog):
     """
@@ -71,7 +87,6 @@ class OptionsDialog(QDialog):
         # connect the browse button to the function
         self.btn_browse_rd_log_file.clicked.connect(self.browse_rd_log_file)
 
-        #v_layout_log_files = QVBoxLayout()
         v_layout_rd_log = QVBoxLayout()
         h_layout_rd_log = QHBoxLayout()
         h_layout_rd_log.addWidget(self.line_edit_rd_log_file)
@@ -83,8 +98,7 @@ class OptionsDialog(QDialog):
 
         self.form_layout.addRow(self.grp_box_log_files)
 
-
-# OK and Cancel buttons
+        # OK and Cancel buttons
         btn_layout = QHBoxLayout()
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
@@ -100,23 +114,22 @@ class OptionsDialog(QDialog):
         self.resize(600, 300)
         self.setLayout(self.form_layout)
         self.setModal(True)
+
     def browse_dp_log_file(self):
         #working_dir = self.working_directory if self.working_directory is not None else os.getcwd()
         dp_log_file, _ = QFileDialog.getSaveFileName(None, 'Enter Drain Point Log Filename', os.getcwd(),
                                                      filter="Drain Point Logfile (*.log)")
         # check if the cancel was clicked on the file dialog
-        #self.line_edit_dp_log_file.setText("abc-123")
         if len(dp_log_file) == 0:
             return
 
         self.line_edit_dp_log_file.setText(dp_log_file)
 
     def browse_rd_log_file(self):
-        #working_dir = self.working_directory if self.working_directory is not None else os.getcwd()
+        # working_dir = self.working_directory if self.working_directory is not None else os.getcwd()
         rd_log_file, _ = QFileDialog.getSaveFileName(None, 'Enter Road Log Filename', os.getcwd(),
                                                      filter="Road Logfile (*.log)")
-         # check if the cancel was clicked on the file dialog
-        #self.line_edit_rd_log_file.setText("abc-123")
+        # check if the cancel was clicked on the file dialog
         if len(rd_log_file) == 0:
             return
 
@@ -214,6 +227,14 @@ class DefineValueDialog(QDialog):
         print ("You clicked OK")
         super(DefineValueDialog, self).accept()
 
+
+class FileDeleteMessageBox(QMessageBox):
+    def __init__(self, file_to_delete, parent=None):
+        super(FileDeleteMessageBox, self).__init__(parent)
+        self.setText("{} file exists.".format(file_to_delete))
+        self.setInformativeText("Do you want to delete this file?")
+        self.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        self.setDefaultButton(QMessageBox.No)
 
 class TableModel(QAbstractTableModel):
     """
@@ -328,3 +349,83 @@ class TableWidget(QWidget):
                     #index = QtCore.QModelIndex(row, col)
                     value = str(self._tm.index(row, col).data())
                     print("row:" + str(row) + " col:" + str(col) + " value:" + value)
+
+
+def delete_shapefile(shp_file_to_delete):
+    if os.path.isfile(shp_file_to_delete):
+        # prompt to delete the file
+        file_name = os.path.basename(shp_file_to_delete)
+        file_delete_msgbox = FileDeleteMessageBox(file_name)
+        user_input = file_delete_msgbox.exec_()
+        if user_input == QMessageBox.Yes:
+            gdal_driver = ogr.GetDriverByName(GDALFileDriver.ShapeFile())
+            gdal_driver.DeleteDataSource(shp_file_to_delete)
+
+
+def create_log_file(graip_db_file, log_file, log_type):
+    with open(log_file, 'w') as file_obj:
+        file_obj.write("GRAIP Database File:{}".format(graip_db_file) + '\n')
+        file_obj.write(time.strftime("%m-%d-%Y %H:%M:%S"))
+        if log_type == 'DP':
+            file_obj.write("GRAIPDID, Drain Type, Error Message, Action Taken")
+        else:
+            file_obj.write("GRAIPDID, Type, Error Message, Action Taken")
+
+
+def clear_data_tables(graip_db_file):
+    conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
+    cursor = conn.cursor()
+    cursor.execute("DELETE * FROM DrainPoints")
+    cursor.execute("DELETE * FROM RoadLines")
+    drain_type_def_rows = cursor.execute("SELECT TableName FROM DrainTypeDefinitions").fetchall()
+    for row in drain_type_def_rows:
+        cursor.execute("DELETE * FROM {}".format(row.TableName))
+    conn.commit()
+    conn.close()
+
+
+def get_shapefile_attribute_column_names(shp_file):
+    gdal_driver = ogr.GetDriverByName(GDALFileDriver.ShapeFile())
+    data_source = gdal_driver.Open(shp_file, 1)
+    layer = data_source.GetLayer(0)
+    layer_definition = layer.GetLayerDefn()
+
+    attribute_names = []
+    for i in range(layer_definition.GetFieldCount()):
+        att_name = layer_definition.GetFieldDefn(i).GetName()
+        if att_name != 'FID' and att_name != 'Shape':
+            attribute_names.append(att_name)
+
+    data_source.Destroy()
+    return attribute_names
+
+
+def populate_drain_type_combobox(graip_db_file, dp_type_combo_box):
+    conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
+    cursor = conn.cursor()
+    drain_point_def_rows = cursor.execute("SELECT DrainTypeName FROM DrainTypeDefinitions").fetchall()
+    drain_point_types = [row.DrainTypeName for row in drain_point_def_rows]
+    dp_type_combo_box.addItems(drain_point_types)
+    conn.close()
+    return dp_type_combo_box
+
+
+def set_index_dp_type_combo_box(dp_shp_file, dp_type_combo_box):
+    dp_shp_file_name = os.path.basename(dp_shp_file)
+
+    matching_index = 0
+    for index in range(dp_type_combo_box.count()):
+        drain_type_name = dp_type_combo_box.itemText(index)
+        no_char_match = 0
+        for i in range(1, len(drain_type_name)):
+            if drain_type_name[0:i] == dp_shp_file_name[0:i]:
+                no_char_match += 1
+
+        if no_char_match > 2:
+            dp_type_combo_box.setCurrentIndex(index)
+            return dp_type_combo_box
+        if no_char_match == 1:
+            matching_index = index
+
+    dp_type_combo_box.setCurrentIndex(matching_index)
+    return dp_type_combo_box
