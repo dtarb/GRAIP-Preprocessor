@@ -1,6 +1,7 @@
 import sys
 import os
 import shutil
+from datetime import datetime
 
 import pyodbc
 from osgeo import ogr, gdal, osr
@@ -24,7 +25,7 @@ class Preprocessor(QWizard):
         self.dp_log_file = None
         self.rd_log_file = None
         self.options_dlg = utils.OptionsDialog()
-
+        self.dp_shp_file_processing_track_dict = {}
         self.addPage(FileSetupPage(parent=self))
         self.addPage(DrainPointPage(shp_file_index=0, shp_file="", parent=self))
 
@@ -377,6 +378,7 @@ class DrainPointPage(QWizardPage):
         self.file_index = shp_file_index
         self.working_directory = None
         self.lst_widget_dp_shp_files = None
+        self.no_match_use_default = None
         self.form_layout = QFormLayout()
         self.msg_label = QLabel()
         self.msg_label.setText("Match a source field from the input file to the appropriate target field "
@@ -401,7 +403,7 @@ class DrainPointPage(QWizardPage):
 
         self.table_label = QLabel("For each target field, select the source field that should be loaded into it")
         # TODO: need to pass data for the table to the TableWidget()
-        self.field_match_table = None
+        self.field_match_table_wizard = None
         self.v_dp_layout.addWidget(self.table_label)
 
         self.group_box_set_field_names.setLayout(self.v_dp_layout)
@@ -415,21 +417,20 @@ class DrainPointPage(QWizardPage):
         conn = pyodbc.connect(utils.MS_ACCESS_CONNECTION % graip_db_file)
         cursor = conn.cursor()
         # populate the field match table based on the drain point shapefile being imported
-        if self.field_match_table is None:
-            # TODO: replace hard coded data with real data from the graip database
+        if self.field_match_table_wizard is None:
             dp_shapefile = self.line_edit_imported_file.text()
             shp_file_attribute_names = utils.get_shapefile_attribute_column_names(dp_shapefile)
-            no_match_default = '<No Match Use Default>'
-            shp_file_attribute_names.append(no_match_default)
-
+            self.no_match_use_default = '<No Match Use Default>'
+            shp_file_attribute_names = [self.no_match_use_default] + shp_file_attribute_names
             table_headers = ['Target Field', 'Matching Source Field']
             self.dp_type_combo_box = utils.populate_drain_type_combobox(graip_db_file, self.dp_type_combo_box)
-            # TODO: set the current index for the drain type combo box
+            # set the current index for the drain type combo box
             self.dp_type_combo_box = utils.set_index_dp_type_combo_box(dp_shapefile, self.dp_type_combo_box)
             drain_type_name = self.dp_type_combo_box.currentText()
             drain_type_def_row = cursor.execute("SELECT DrainTypeID FROM DrainTypeDefinitions "
                                                 "WHERE DrainTypeName = ?", drain_type_name).fetchone()
 
+            # find the target field names in the database corresponding to the shapefile being imported
             field_name_rows = cursor.execute("SELECT DBField FROM FieldMatches "
                                              "WHERE AttTableID = ?", drain_type_def_row.DrainTypeID).fetchall()
             target_field_col_data = [row.DBField for row in field_name_rows]
@@ -450,24 +451,24 @@ class DrainPointPage(QWizardPage):
 
                     if not found_match:
                         for shp_att_name in shp_file_attribute_names:
-                            if len(shp_att_name) > 2 and len(source_field_row.DBFField):
+                            if len(shp_att_name) > 2 and len(source_field_row.DBFField) > 2:
                                 # match first 3 characters
                                 if shp_att_name[0:2].lower() == source_field_row.DBFField[0:2].lower():
                                     source_field_col_data.append(source_field_row.DBFField)
                                     found_match = True
                                     break
                     if not found_match:
-                        source_field_col_data.append(no_match_default)
+                        source_field_col_data.append(self.no_match_use_default)
 
             target_source_combined = zip(target_field_col_data, source_field_col_data)
             table_data = [[item[0], item[1]] for item in target_source_combined]
             #table_data = [['CDate', 'CDATE'], ['CTime', 'CTIME'], ['VehicleID', 'VEHICLE']]
             cmb_data = shp_file_attribute_names
             #cmb_data = ['CDATE', 'CTIME', 'STREAM_CON', 'SLOPE_SHP']
-            self.field_match_table = utils.TableWidget(table_data=table_data, table_header=table_headers,
+            self.field_match_table_wizard = utils.TableWidget(table_data=table_data, table_header=table_headers,
                                                        cmb_data=cmb_data)
 
-            self.v_dp_layout.addWidget(self.field_match_table)
+            self.v_dp_layout.addWidget(self.field_match_table_wizard)
             # drain_point_def_rows = cursor.execute("SELECT DrainTypeName FROM DrainTypeDefinitions").fetchall()
             # drain_point_types = [row.DrainTypeName for row in drain_point_def_rows]
             # #drain_point_types = ['Broad base type', 'Diffuse drain', 'Ditch relief', 'Lead off']
@@ -479,11 +480,242 @@ class DrainPointPage(QWizardPage):
         # here we should be processing the currently imported drain shape file
         # during the processing if we find a value that's not in the definitions table we need
         # to show the DefineValueDialog
-        define_value_dlg = utils.DefineValueDialog(missing_field_value='<25 degrees',
-                                                   missing_field_name='ChannelAngleID')
-        define_value_dlg.show()
-        define_value_dlg.exec_()
-        return True
+        #get general drainpoint table joined with specific drainpoint table from the access database
+        #selectStmt = "SELECT * FROM DrainPoints," & impVar.attTableNames & _
+        # " WHERE DrainPoints.GRAIPDID=" & impVar.attTableNames & _
+        # ".GRAIPDID ORDER BY DrainPoints.GRAIPDID ASC"
+        try:
+            graip_db_file = self.wizard.line_edit_mdb_file.text()
+            conn = pyodbc.connect(utils.MS_ACCESS_CONNECTION % graip_db_file)
+            cursor = conn.cursor()
+            dp_table_field_names = ['GRAIPDID', 'DrainTypeID', 'CDate', 'CTime', 'VehicleID', 'DrainID',
+                                    'StreamConnectedID', 'OrphanID', 'DischargeToID']
+            # Testing strategy for inserting records to DrainPoints table
+            # cursor.execute("INSERT INTO DrainPoints (GRAIPDID, CTime) VALUES(?, ?)", -1, "")
+            # conn.commit()
+            # # get the record just added
+            # dp_new_row = cursor.execute("SELECT * FROM DrainPoints WHERE GRAIPDID=?", -1).fetchone()
+            # if dp_new_row:
+            #     print "working"
+            # else:
+            #     print "failed"
+            #
+            # return
+
+            drain_type_name = self.dp_type_combo_box.currentText()
+            # find drain type attribute table name - this is the table to which we will be writing data in addition
+            # to writing data to the DrainPoints table
+            drain_type_def_row = cursor.execute("SELECT DrainTypeID, TableName FROM DrainTypeDefinitions WHERE "
+                                                "DrainTypeName=?", drain_type_name).fetchone()
+            if drain_type_def_row:
+                # data for the fields (GRAIPDID, DrainTypeID, CDate, CTime, VehicleID, DrainID, StreamConnectID, OrphanID,
+                # DischargeToID) needs to be written to the DrainPoints table, Data for other fields need to be written to
+                # the corresponding matching drainpoint attribute table. Data first need to be written to the DrainPoints
+                # table then to the matching attribute table
+
+                # add
+                # cursor.execute("SELECT * FROM DrainPoints, ? WHERE DrainPoints.GRAIPDID=?", drain_type_def_row.TableName,
+                #                drain_type_def_row.TableName + '.GRAIPDID')
+
+                # check if the drainpoints file has been processed before
+                update_main_dp_table = False
+                dp_shapefile = self.line_edit_imported_file.text()
+                if dp_shapefile in self.wizard.dp_shp_file_processing_track_dict:
+                    graipid = self.wizard.dp_shp_file_processing_track_dict[dp_shapefile]
+                    # delete all records from the matching attribute table
+                    cursor.execute("DELETE * FROM {}".format(drain_type_def_row.TableName))
+                    conn.commit()
+                    # In this case we will be updating records in the DrainPoints table
+                    update_main_dp_table = True
+                else:
+                    # find out the next GRAIPDID from the DrainPoints table
+                    dp_row = cursor.execute("SELECT MAX(GRAIPDID)AS Max_GRAIPDID FROM DrainPoints").fetchone()
+                    if dp_row:
+                        graipid = dp_row.Max_GRAIPDID + 1
+                    else:
+                        graipid = 0
+
+                    self.wizard.dp_shp_file_processing_track_dict[dp_shapefile] = graipid
+            else:
+                # TODO: May be show a message and return
+                raise Exception("No matching drain type attribute table was found")
+
+            # open drainpoint shapefile
+            gdal_driver = ogr.GetDriverByName(utils.GDALFileDriver.ShapeFile())
+            data_source = gdal_driver.Open(dp_shapefile, 1)
+            layer = data_source.GetLayer(0)
+
+            # for each drain point in shapefile
+            for dp in layer:
+                # Fill StreamConnectID field for stream crossing or sump
+                if drain_type_def_row.TableName == "StrXingAtt":
+                    stream_connect_id = 2
+                elif drain_type_def_row.TableName == "SumpAtt":
+                    stream_connect_id = 1
+                else:
+                    # this seems to be the database default value for the StreamConnectID field
+                    stream_connect_id = 2
+
+                # for each field name imported from the shape file (table grid source column (col#2))
+                fld_match_table_model = self.field_match_table_wizard.table_model
+                # collect data to be inserted to both the DrainPoints table and shapefile specific attribute table
+                dp_row_data = {'GRAIPDID': graipid, 'DrainTypeID': drain_type_def_row.DrainTypeID,
+                               'StreamConnectID': stream_connect_id}
+                dp_att_row_data = {'GRAIPDID': graipid}
+
+                for row in range(fld_match_table_model.rowCount()):
+                    # find the source column name (2nd column of the table)
+                    dp_src_field_name = str(fld_match_table_model.index(row, 2).data())
+                    dp_target_field_name = str(fld_match_table_model.index(row, 1).data())
+                    # if a matching source field name exists
+                    if dp_src_field_name != self.no_match_use_default:
+                        # get the value for that field from the shapefile
+                        dp_att_value = dp.GetField(dp_src_field_name)
+                        # if a value/data exists in the shapefile
+                        if dp_att_value:
+                            # replace any 2 single quotes or a double quote in the value
+                            dp_att_value = dp_att_value.replace("''", "")
+                            dp_att_value = dp_att_value.replace('"', "")
+
+                            # if this is the PipeDimID(oval) field, then merge with PipeDimID field
+                            if drain_type_def_row.TableName == "StrXingAtt" \
+                                    and fld_match_table_model.index(row, 1).data() == "PipeDimID(oval)":
+                                prev_row = row - 1
+                                field_name = fld_match_table_model.index(prev_row, 1).data()
+                            else:
+                                field_name = fld_match_table_model.index(row, 1).data()
+
+                            # check if there is a DefinitionTable in MetaData table matching the field_name
+                            metadata_row = cursor.execute("SELECT DefinitionTable FROM MetaData WHERE IDFieldName=?",
+                                                          field_name).fetchone()
+
+                            # if no matching definition table was found then write the original data value
+                            if metadata_row is None:
+                                if field_name in dp_table_field_names:
+                                    dp_row_data[field_name] = dp_att_value
+                                else:
+                                    dp_att_row_data[field_name] = dp_att_value
+
+                                # show message describing the mismatch
+                                dp_shapefile_basename = os.path.basename(dp_shapefile)
+                                msg = "Type mismatch between field '{target_fld_name}' in database and value '{value}' " \
+                                      "in field '{source_fld_name}' in shapefile. " \
+                                      "'{shp_file}'.".format(target_fld_name=field_name, value=dp_att_value,
+                                                             source_fld_name=dp_src_field_name,
+                                                             shp_file=dp_shapefile_basename)
+                                msg_box = QMessageBox()
+                                msg_box.setIcon(QMessageBox.Critical)
+                                msg_box.setText(msg)
+                                msg_box.exec_()
+                                # TODO: need to write to the log file and other bits of processing
+
+                            else:
+                                # found a matching Definition Table
+                                definition_table_name = metadata_row.DefinitionTable
+                                # definition_table_name = definition_table_name.replace("'", "''")
+                                definition_table_rows = cursor.execute("SELECT * FROM ?",
+                                                                       definition_table_name).fetchall()
+                                value_matching_id = None
+                                for table_row in definition_table_rows:
+                                    if table_row[1] == dp_att_value:
+                                        value_matching_id = table_row[0]
+
+                                if value_matching_id is None:
+                                    # for details on how to setup the DefineValueDialog
+                                    # refer to vb module modGeneralFunctions and function getIDFromDefinitionTable
+                                    if field_name in ('FlowPathVeg1ID', 'FlowPathVeg2ID', 'SurfaceTypeID'):
+                                        define_value_dlg = utils.DefineValueDialog(missing_field_value=dp_att_value,
+                                                                                   missing_field_name=field_name,
+                                                                                   graip_db_file=graip_db_file,
+                                                                                   multiplier=True,
+                                                                                   def_table_name=definition_table_name)
+                                    else:
+                                        define_value_dlg = utils.DefineValueDialog(missing_field_value=dp_att_value,
+                                                                                   missing_field_name=field_name,
+                                                                                   graip_db_file=graip_db_file,
+                                                                                   def_table_name=definition_table_name)
+                                    define_value_dlg.show()
+                                    define_value_dlg.exec_()
+                                    if define_value_dlg.is_cancel:
+                                        raise Exception("Aborting processing of this shapefile")
+
+                                    # TODO: need to do processing based on what the user selected in this dialogbox
+
+                                else:
+                                    if field_name in dp_table_field_names:
+                                        dp_row_data[field_name] = value_matching_id
+                                    else:
+                                        dp_att_row_data[field_name] = value_matching_id
+                    else:
+                        if dp_target_field_name in ('CDate', 'CTime', 'VehicleID'):
+                            msg = dp_target_field_name + " can't take default values"
+                            raise Exception(msg)
+
+                # insert/update data to DrainPoints table
+                if not update_main_dp_table:
+                    cursor.execute("INSERT INTO DrainPoints(GRAIPDID, DrainTypeID, CDate, CTime, VehicleID, DrainID, "
+                                   "StreamConnectID, OrphanID, DischargeToID) "
+                                   "VALUES (?, ?, ?, ?, ?, ?, ?, ? , ?)", dp_row_data['GRAIPDID'],
+                                   dp_row_data['DrainTypeID'], dp_row_data['CDate'], dp_row_data['CTime'],
+                                   dp_row_data['VehicleID'], dp_row_data['DrainID'], dp_row_data['StreamConnectID'],
+                                   dp_row_data['OrphanID'], dp_row_data['DischargeToID'])
+                else:
+                    update_sql = "UPDATE DrainPoints SET DrainTypeID=?, CDate=?, CTime=?, VehicleID=?, DrainID=?, " \
+                                 "StreamConnectID=?, OrphanID=?, DischargeToID=?  WHERE GRAIPDID=?"
+                    data = (dp_row_data['DrainTypeID'], dp_row_data['CDate'], dp_row_data['CTime'],
+                            dp_row_data['VehicleID'], dp_row_data['DrainID'], dp_row_data['StreamConnectID'],
+                            dp_row_data['OrphanID'], dp_row_data['DischargeToID'], graipid)
+                    cursor.execute(update_sql, data)
+
+                # insert data to matching attribute table
+                col_names = ",".join(k for k in dp_att_row_data.keys())
+                col_values = ",".join(str(v) for v in dp_att_row_data.values())
+                insert_sql = "INSERT INTO {table_name}({col_names}) VALUES ({col_values})"
+                insert_sql = insert_sql.format(table_name=drain_type_def_row.TableName, col_names=col_names,
+                                               col_values=col_values)
+                cursor.execute(insert_sql)
+                conn.commit()
+                # set data for the DrainID field in DrainPoints table
+                dp_row = cursor.execute("SELECT * FROM DrainPoints WHERE GRAIPDID=?", graipid).fetchone()
+                if dp_row.CTime != 999:
+                    # remove am/pm
+                    time = dp_row.CTime[:-2]
+                    time_hour, time_min, time_sec = time.split(":")
+                    time_hour = int(time_hour)
+                    time_min = int(time_min)
+                    time_sec = int(time_sec)
+                    if time_sec > 30:
+                        time_min += 1
+                    if "p" in dp_row.CTime and time_hour != 12:
+                        time_hour += 12
+
+                    if "a" in dp_row.CTime and time_hour == 12:
+                        time_hour = 0
+                    time_24_format = (time_hour * 100) + time_min
+
+                    dt_obj = datetime.strptime(str(dp_row.CDate), '%m/%d/%Y')
+                    drain_id = (dt_obj.year * 1000000000) + (dt_obj.month * 10000000) + (dt_obj.day * 100000) + \
+                               (time_24_format * 10) + dp_row.VehicleID
+                    update_sql = "UPDATE DrainPoints SET DrainID=? WHERE GRAIPDID=?"
+                    data = (drain_id, graipid)
+                    cursor.execute(update_sql, data)
+                    conn.commit()
+
+                graipid += 1
+
+            conn.close()
+            # go to the next wizard page
+            return True
+        except Exception as ex:
+            # TODO: write the error to the log file
+            if conn:
+                conn.close()
+            msg_box = QMessageBox()
+            msg_box.setIcon(QMessageBox.Critical)
+            msg_box.setText(ex.message)
+            msg_box.exec_()
+            # stay on the same wizard page
+            return False
 
 app = Preprocessor()
 app.run()

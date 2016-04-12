@@ -20,6 +20,7 @@ class GDALFileDriver(object):
     def TifFile(cls):
         return "GTiff"
 
+
 class FileDialog(QFileDialog):
     """
     Custom file dialog for selecting multiple files
@@ -148,10 +149,18 @@ class OptionsDialog(QDialog):
 
 
 class DefineValueDialog(QDialog):
-    def __init__(self, missing_field_value, missing_field_name, parent=None):
+    use_default = False
+    reassign_value = False
+    add_new = False
+    is_cancel = False
+
+    def __init__(self, missing_field_value, missing_field_name, graip_db_file, def_table_name, multiplier=False, parent=None):
         super(DefineValueDialog, self).__init__(parent)
-        self.missing_field_value= missing_field_value
+        self.missing_field_value = missing_field_value
         self.missing_field_name = missing_field_name
+        self.graip_db_file = graip_db_file
+        self.def_table_name = def_table_name
+        self.def_default_id = None
         self.form_layout = QFormLayout()
         v_main_layout = QVBoxLayout()
         self.radio_btn_use_default = QRadioButton("Use default value")
@@ -181,6 +190,7 @@ class DefineValueDialog(QDialog):
         grid_layout_new_entry = QGridLayout()
         self.label_table_name = QLabel("Table Name")
         self.line_edit_table_name = QLineEdit()
+        self.label_table_name.setText(self.def_table_name)
         grid_layout_new_entry.addWidget(self.label_table_name, 0, 0)
         grid_layout_new_entry.addWidget(self.line_edit_table_name, 0, 1)
 
@@ -198,6 +208,11 @@ class DefineValueDialog(QDialog):
         self.line_edit_description = QLineEdit()
         grid_layout_new_entry.addWidget(self.label_description, 3, 0)
         grid_layout_new_entry.addWidget(self.line_edit_description, 3, 1)
+        if multiplier:
+            self.label_multiplier = QLabel("Multiplier")
+            self.line_edit_multiplier = QLineEdit()
+            grid_layout_new_entry.addWidget(self.label_multiplier, 4, 0)
+            grid_layout_new_entry.addWidget(self.line_edit_multiplier, 4, 1)
 
         self.grp_box_new_entry.setLayout(grid_layout_new_entry)
         v_main_layout.addWidget(self.grp_box_new_entry)
@@ -215,18 +230,86 @@ class DefineValueDialog(QDialog):
         btn_layout.addWidget(self.buttons)
         self.form_layout.addRow(btn_layout)
 
+        self.definition_ids = []
+        self._initial_setup()
+
         self.setWindowTitle("Define Value")
         self.resize(600, 300)
         self.setLayout(self.form_layout)
         self.setModal(True)
 
+    def _initial_setup(self):
+        conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
+        cursor = conn.cursor()
+        def_rows = cursor.execute("SELECT * FROM ?", self.def_table_name).fetchall()
+        # definitions are in the 2nd column of the definitions table
+        definitions = [row[1] for row in def_rows]
+        self.cmb_definitions.addItems(definitions)
+        # definitions ID values are in the 1st column of the definitions table
+        self.definition_ids = [row[0] for row in def_rows]
+        # set the current index of the combobox
+        initial_combobox_index = -1
+        if len(self.missing_field_value) > 2:
+            for index in range(self.cmb_definitions.count()):
+                definition = self.cmb_definitions.itemText(index)
+                if len(definition) > 2:
+                    # match first 3 characters
+                    if self.missing_field_value[0:2].lower() == definition[0:2].lower():
+                        initial_combobox_index = index
+                        break
+        self.cmb_definitions.setCurrentIndex(initial_combobox_index)
+        # matching found
+        if initial_combobox_index >= 0:
+            # set the reassign radio button as checked
+            self.radio_btn_reassign.toggle()
+        else:
+            # see default value exists in definitions table
+            def_row = cursor.execute("SELECT * FROM ? WHERE Description LIKE '*Default*'", self.def_table_name).fetchone()
+            if def_row:
+                self.line_edit_default.setText(def_row[1])
+                self.def_default_id = def_row[0]
+                self.radio_btn_use_default.toggle()
+            else:
+                self.line_edit_default.setText("No Default Specified")
+                self.def_default_id = 0
+                # disable the radio button for default
+                self.radio_btn_use_default.setEnabled(False)
+                self.radio_btn_add_new.toggle()
+
+            # TODO: Continue here (ref getIDFromDefinitionTable function in mod modGeneralFunctions)
+            # frmAddMultiplier.txtID = defID
+
     def accept(self, *args, **kwargs):
         # This function is called when the OK button of this dialog is clicked
-        # TODO: Here we need to do processing based on the data entered on the dialogbox
+        conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
+        cursor = conn.cursor()
+        if self.radio_btn_reassign.isChecked():
+            self.reassign_value = True
+            sql_insert = "INSERT INTO ValueReassigns (FromField, ToField, DefinitionID, DefinitionTable) " \
+                         "VALUES (?, ?, ?, ?)"
+            definition_id = self.definition_ids[self.cmb_definitions.currentIndex()]
+            data = (self.line_edit_def.text(), self.cmb_definitions.currentText(), definition_id,
+                    self.def_table_name)
+        elif self.radio_btn_use_default.isChecked():
+            self.use_default = True
+            sql_insert = "INSERT INTO ValueReassigns (FromField, ToField, DefinitionID, DefinitionTable) " \
+                         "VALUES (?, ?, ?, ?)"
+            data = (self.line_edit_def.text(), self.line_edit_default.text(), self.line_edit_id.text(),
+                    self.def_table_name)
+        elif self.radio_btn_add_new.isChecked():
+            self.add_new = True
+            sql_insert = "INSERT INTO ? VALUES (?, ?, ?)"
+            data = (self.def_table_name, self.line_edit_id.text(), self.line_edit_def.text(),
+                    self.line_edit_description.text())
 
-        print ("You clicked OK")
+        cursor.execute(sql_insert, data)
+        conn.commit()
+
+        # print ("You clicked OK")
         super(DefineValueDialog, self).accept()
 
+    def reject(self, *args, **kwargs):
+        self.is_cancel = True
 
 class FileDeleteMessageBox(QMessageBox):
     def __init__(self, file_to_delete, parent=None):
@@ -292,7 +375,15 @@ class ComboDelegate(QItemDelegate):
 
     def setEditorData(self, editor, index):
         editor.blockSignals(True)
-        editor.setCurrentIndex(index.row())
+        # get data for the current row in the table
+        data = index.model().data(index)
+        # get the index for the combobox matching the data for the table
+        index = editor.findText(data)
+        # if no match was found then set index to 0 (combobox item <No Match Use Default>')
+        if index == -1:
+            index = 0
+        #editor.setCurrentIndex(index.row())
+        editor.setCurrentIndex(index)
         #editor.setCurrentIndex(str(index.model().data(index)))
         #print ('editor data:' + str(index.model().data(index)))
         editor.blockSignals(False)
@@ -341,6 +432,10 @@ class TableWidget(QWidget):
                 self._tv.openPersistentEditor(self._tm.index(row, 1))
 
             l.addWidget(self._tv)
+
+        @property
+        def table_model(self):
+            return self._tm
 
         def closeEvent(self, *args, **kwargs):
             # This is test that we can retrieve the updated data bound to the tableview object
@@ -429,3 +524,5 @@ def set_index_dp_type_combo_box(dp_shp_file, dp_type_combo_box):
 
     dp_type_combo_box.setCurrentIndex(matching_index)
     return dp_type_combo_box
+
+
