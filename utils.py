@@ -153,19 +153,22 @@ class DefineValueDialog(QDialog):
     reassign_value = False
     add_new = False
     is_cancel = False
+    definition_id = 0
 
-    def __init__(self, missing_field_value, missing_field_name, graip_db_file, def_table_name, multiplier=False, parent=None):
+    def __init__(self, missing_field_value, missing_field_name, graip_db_file, def_table_name,
+                 is_multiplier=False, parent=None):
         super(DefineValueDialog, self).__init__(parent)
         self.missing_field_value = missing_field_value
         self.missing_field_name = missing_field_name
         self.graip_db_file = graip_db_file
         self.def_table_name = def_table_name
+        self.is_multiplier = is_multiplier
         self.def_default_id = None
         self.form_layout = QFormLayout()
         v_main_layout = QVBoxLayout()
         self.radio_btn_use_default = QRadioButton("Use default value")
         # set this radio button as checked
-        self.radio_btn_use_default.toggle()
+        #self.radio_btn_use_default.toggle()
         self.radio_btn_reassign = QRadioButton("Reassign this value to an existing value in definitions table")
         self.radio_btn_add_new = QRadioButton("Add new entry to definitions table")
         missing_value_msg = "Value '{}' in field '{}' is not in the definitions " \
@@ -174,6 +177,7 @@ class DefineValueDialog(QDialog):
         v_main_layout.addWidget(self.lbl_missing_value)
         h_layout_default = QHBoxLayout()
         self.line_edit_default = QLineEdit()
+        self.line_edit_default.setEnabled(False)
         h_layout_default.addWidget(self.radio_btn_use_default)
         h_layout_default.addWidget(self.line_edit_default)
         v_main_layout.addLayout(h_layout_default)
@@ -190,12 +194,15 @@ class DefineValueDialog(QDialog):
         grid_layout_new_entry = QGridLayout()
         self.label_table_name = QLabel("Table Name")
         self.line_edit_table_name = QLineEdit()
-        self.label_table_name.setText(self.def_table_name)
+        self.line_edit_table_name.setText(def_table_name)
+        self.line_edit_table_name.setEnabled(False)
+        #self.label_table_name.setText(self.def_table_name)
         grid_layout_new_entry.addWidget(self.label_table_name, 0, 0)
         grid_layout_new_entry.addWidget(self.line_edit_table_name, 0, 1)
 
         self.label_id = QLabel("ID")
         self.line_edit_id = QLineEdit()
+        self.line_edit_id.setEnabled(False)
         grid_layout_new_entry.addWidget(self.label_id, 1, 0)
         grid_layout_new_entry.addWidget(self.line_edit_id, 1, 1)
 
@@ -208,7 +215,7 @@ class DefineValueDialog(QDialog):
         self.line_edit_description = QLineEdit()
         grid_layout_new_entry.addWidget(self.label_description, 3, 0)
         grid_layout_new_entry.addWidget(self.line_edit_description, 3, 1)
-        if multiplier:
+        if self.is_multiplier:
             self.label_multiplier = QLabel("Multiplier")
             self.line_edit_multiplier = QLineEdit()
             grid_layout_new_entry.addWidget(self.label_multiplier, 4, 0)
@@ -239,77 +246,115 @@ class DefineValueDialog(QDialog):
         self.setModal(True)
 
     def _initial_setup(self):
-        conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
-        cursor = conn.cursor()
-        def_rows = cursor.execute("SELECT * FROM ?", self.def_table_name).fetchall()
-        # definitions are in the 2nd column of the definitions table
-        definitions = [row[1] for row in def_rows]
-        self.cmb_definitions.addItems(definitions)
-        # definitions ID values are in the 1st column of the definitions table
-        self.definition_ids = [row[0] for row in def_rows]
-        # set the current index of the combobox
-        initial_combobox_index = -1
-        if len(self.missing_field_value) > 2:
-            for index in range(self.cmb_definitions.count()):
-                definition = self.cmb_definitions.itemText(index)
-                if len(definition) > 2:
-                    # match first 3 characters
-                    if self.missing_field_value[0:2].lower() == definition[0:2].lower():
-                        initial_combobox_index = index
-                        break
-        self.cmb_definitions.setCurrentIndex(initial_combobox_index)
-        # matching found
-        if initial_combobox_index >= 0:
-            # set the reassign radio button as checked
-            self.radio_btn_reassign.toggle()
-        else:
+        try:
+            conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
+            cursor = conn.cursor()
+            sql_select = "SELECT * FROM {}".format(self.def_table_name)
+            def_rows = cursor.execute(sql_select).fetchall()
+            # definitions are in the 2nd column of the definitions table
+            definitions = [row[1] for row in def_rows]
+            self.cmb_definitions.addItems(definitions)
+            # definitions ID values are in the 1st column of the definitions table
+            self.definition_ids = [row[0] for row in def_rows]
+            # set the current index of the combobox
+            initial_combobox_index = 0
+            field_match_found = False
+            if len(self.missing_field_value) > 2:
+                for index in range(self.cmb_definitions.count()):
+                    definition = self.cmb_definitions.itemText(index)
+                    if len(definition) > 2:
+                        # match first 3 characters
+                        if self.missing_field_value[0:2].lower() == definition[0:2].lower():
+                            initial_combobox_index = index
+                            field_match_found = True
+                            break
+            self.cmb_definitions.setCurrentIndex(initial_combobox_index)
+            # matching found
+            if field_match_found:
+                # set the reassign radio button as checked
+                self.radio_btn_reassign.toggle()
+
             # see default value exists in definitions table
-            def_row = cursor.execute("SELECT * FROM ? WHERE Description LIKE '*Default*'", self.def_table_name).fetchone()
+            sql_select = "SELECT * FROM {} WHERE Description LIKE '*Default*'".format(self.def_table_name)
+            def_row = cursor.execute(sql_select).fetchone()
             if def_row:
                 self.line_edit_default.setText(def_row[1])
                 self.def_default_id = def_row[0]
-                self.radio_btn_use_default.toggle()
+                if not field_match_found:
+                    self.radio_btn_use_default.toggle()
             else:
                 self.line_edit_default.setText("No Default Specified")
                 self.def_default_id = 0
                 # disable the radio button for default
                 self.radio_btn_use_default.setEnabled(False)
-                self.radio_btn_add_new.toggle()
+                if not field_match_found:
+                    self.radio_btn_add_new.toggle()
 
             # TODO: Continue here (ref getIDFromDefinitionTable function in mod modGeneralFunctions)
             # frmAddMultiplier.txtID = defID
+            # in case of adding a new entry to the definition table, find the next id that will be used for this
+            # new definition record
+            # first determine the field name of the ID field in the definition table (this is the first column of the
+            # table)
+            def_column = cursor.columns(table=self.def_table_name).fetchone()
+            # now use the def_column.column_name to find the maximum value for this field
+            sql_select = "SELECT MAX({}) AS max_id FROM {}".format(def_column.column_name, self.def_table_name)
+            row = cursor.execute(sql_select).fetchone()
+            def_id = 0
+            if row:
+                def_id = row.max_id + 1
+
+            self.line_edit_id.setText(str(def_id))
+            self.line_edit_def.setText(self.missing_field_value)
+            self.line_edit_description.setText(self.missing_field_value)
+            if self.is_multiplier:
+                self.line_edit_multiplier.setText("1")
+        except Exception:
+            raise
+        finally:
+            if conn:
+                conn.close()
 
     def accept(self, *args, **kwargs):
         # This function is called when the OK button of this dialog is clicked
-        conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
-        cursor = conn.cursor()
-        if self.radio_btn_reassign.isChecked():
-            self.reassign_value = True
-            sql_insert = "INSERT INTO ValueReassigns (FromField, ToField, DefinitionID, DefinitionTable) " \
-                         "VALUES (?, ?, ?, ?)"
-            definition_id = self.definition_ids[self.cmb_definitions.currentIndex()]
-            data = (self.line_edit_def.text(), self.cmb_definitions.currentText(), definition_id,
-                    self.def_table_name)
-        elif self.radio_btn_use_default.isChecked():
-            self.use_default = True
-            sql_insert = "INSERT INTO ValueReassigns (FromField, ToField, DefinitionID, DefinitionTable) " \
-                         "VALUES (?, ?, ?, ?)"
-            data = (self.line_edit_def.text(), self.line_edit_default.text(), self.line_edit_id.text(),
-                    self.def_table_name)
-        elif self.radio_btn_add_new.isChecked():
-            self.add_new = True
-            sql_insert = "INSERT INTO ? VALUES (?, ?, ?)"
-            data = (self.def_table_name, self.line_edit_id.text(), self.line_edit_def.text(),
-                    self.line_edit_description.text())
+        # ref to the code for the OK button of the frmAddNew
+        try:
+            conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
+            cursor = conn.cursor()
+            if self.radio_btn_reassign.isChecked():
+                self.reassign_value = True
+                sql_insert = "INSERT INTO ValueReassigns (FromField, ToField, DefinitionID, DefinitionTable) " \
+                             "VALUES (?, ?, ?, ?)"
+                self.definition_id = self.definition_ids[self.cmb_definitions.currentIndex()]
+                data = (self.line_edit_def.text(), self.cmb_definitions.currentText(), self.definition_id,
+                        self.def_table_name)
+            elif self.radio_btn_use_default.isChecked():
+                self.use_default = True
+                self.definition_id = int(self.line_edit_id.text())
+                sql_insert = "INSERT INTO ValueReassigns (FromField, ToField, DefinitionID, DefinitionTable) " \
+                             "VALUES (?, ?, ?, ?)"
+                data = (self.line_edit_def.text(), self.line_edit_default.text(), self.definition_id,
+                        self.def_table_name)
+            elif self.radio_btn_add_new.isChecked():
+                self.add_new = True
+                self.definition_id = int(self.line_edit_id.text())
+                sql_insert = "INSERT INTO {} VALUES (?, ?, ?)".format(self.def_table_name)
+                data = (self.definition_id, self.line_edit_def.text(), self.line_edit_description.text())
 
-        cursor.execute(sql_insert, data)
-        conn.commit()
+            cursor.execute(sql_insert, data)
+            conn.commit()
 
-        # print ("You clicked OK")
-        super(DefineValueDialog, self).accept()
+            # print ("You clicked OK")
+            super(DefineValueDialog, self).accept()
+        except Exception:
+            raise
+        finally:
+            if conn:
+                conn.close()
 
     def reject(self, *args, **kwargs):
         self.is_cancel = True
+        super(DefineValueDialog, self).reject()
 
 class FileDeleteMessageBox(QMessageBox):
     def __init__(self, file_to_delete, parent=None):
@@ -408,7 +453,7 @@ class TableView(QTableView):
         self.setColumnWidth(1, 300)
         self.resizeColumnsToContents()
 
-        # Set the delegate for column 1 of our table
+        # Set the delegate for column 1 (2nd column) of our table (col number starts with 0)
         # self.setItemDelegateForColumn(0, ButtonDelegate(self))
         self.setItemDelegateForColumn(1, ComboDelegate(self, cmb_data_list=self.combobox_data))
 
