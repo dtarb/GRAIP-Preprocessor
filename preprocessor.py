@@ -411,6 +411,16 @@ class DrainPointPage(QWizardPage):
         self.group_box_set_field_names.setLayout(self.v_dp_layout)
         self.form_layout.addRow(self.group_box_set_field_names)
 
+        # progress bar
+        self.group_box_import_progress = QGroupBox("Import Progress")
+        v_layout = QVBoxLayout()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setValue(0)
+        v_layout.addWidget(self.progress_bar)
+        self.group_box_import_progress.setLayout(v_layout)
+
+        self.form_layout.addRow(self.group_box_import_progress)
         self.setLayout(self.form_layout)
         self.setTitle("Import Drain Point Shapefile: {} of {}".format(self.file_index + 1, shp_file_count))
 
@@ -548,8 +558,15 @@ class DrainPointPage(QWizardPage):
             data_source = gdal_driver.Open(dp_shapefile, 1)
             layer = data_source.GetLayer(0)
 
+            # set progress bar
+            progress_bar_max = len(layer)
+            self.progress_bar.setMaximum(progress_bar_max)
+            progress_bar_counter = 0
             # for each drain point in shapefile
             for dp in layer:
+                #if progress_bar_counter % 10 == 0:
+                # update_pct = int(progress_bar_max/progress_bar_counter)
+                # self.progress_bar.setValue(update_pct)
                 # Fill StreamConnectID field for stream crossing or sump
                 if drain_type_def_row.TableName == "StrXingAtt":
                     stream_connect_id = 2
@@ -758,7 +775,9 @@ class DrainPointPage(QWizardPage):
                     conn.commit()
 
                 graipid += 1
-
+                # update progress bar
+                progress_bar_counter += 1
+                self.progress_bar.setValue(progress_bar_counter)
             conn.close()
         except Exception as ex:
             # TODO: write the error to the log file
