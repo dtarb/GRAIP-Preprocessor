@@ -25,23 +25,32 @@ class Preprocessor(QWizard):
         super(Preprocessor, self).__init__(parent)
         self.dp_log_file = None
         self.rd_log_file = None
+        self.is_uninterrupted = False
         self.options_dlg = utils.OptionsDialog()
-        # self.dp_shp_file_processing_track_dict = {}
-        self.addPage(FileSetupPage(parent=self))
-        self.addPage(DrainPointPage(shp_file_index=0, shp_file="", parent=self))
 
         self.setWindowTitle("GRAIP Preprocessor (Version 2.0)")
         # add a custom button
         self.btn_options = QPushButton('Options')
-        self.btn_options.clicked.connect(self.show_options_dialog)
+        #self.btn_options.clicked.connect(self.show_options_dialog)
         self.setButton(self.CustomButton1, self.btn_options)
         self.setOptions(self.HaveCustomButton1)
 
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        self.resize(1000, 600)
+        # add pages
+        self.addPage(FileSetupPage(parent=self))
+        self.addPage(DrainPointPage(shp_file_index=0, shp_file="", parent=self))
 
-    def show_options_dialog(self):
-        self.dp_log_file, self.rd_log_file = self.options_dlg.get_data_from_dialog(self.dp_log_file, self.rd_log_file)
+        self.currentIdChanged.connect(self.show_options_button)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.resize(1800, 1000)
+
+    def show_options_button(self):
+        if self.currentId() == 0:
+            # show the Options button if it is the FileSetup page
+            self.btn_options.show()
+
+    # def show_options_dialog(self):
+    #     self.dp_log_file, self.rd_log_file, self.is_uninterrupted = self.options_dlg.get_data_from_dialog(
+    #         self.dp_log_file, self.rd_log_file)
 
     def run(self):
         # Show the form
@@ -55,6 +64,7 @@ class FileSetupPage(QWizardPage):
     def __init__(self, parent=None):
         super(FileSetupPage, self).__init__(parent)
         self.wizard = parent
+        self.wizard.btn_options.clicked.connect(self.show_options_dialog)
         self.working_directory = None
         self.dp_shp_file_processing_track_dict = {}
         self.form_layout = QFormLayout()
@@ -157,7 +167,7 @@ class FileSetupPage(QWizardPage):
         self.form_layout.addRow(self.group_box_input_files)
         self.dp_log_file = self.wizard.dp_log_file
         self.rd_log_file = self.wizard.rd_log_file
-
+        self.is_uninterrupted = self.wizard.is_uninterrupted
         # self.group_box_mdb_file = QGroupBox("GRAIP Database (*.mdb)")
         # self.line_edit_mdb_file = QLineEdit()
         # self.btn_browse_mdb_file = QPushButton('....')
@@ -172,14 +182,24 @@ class FileSetupPage(QWizardPage):
         # make some of the page fields available to other pages
         # make the list widget for drain point shapefiles available to other pages of this wizard
         self.current_imported_dp_file = QLineEdit()
-
         self.registerField("current_imported_dp_file", self.current_imported_dp_file, 'text')
 
         self.setLayout(self.form_layout)
         self.setTitle("File Setup")
 
+    def show_options_dialog(self):
+        if len(self.line_edit_mdb_file.text().strip()) == 0:
+            msg_box = QMessageBox()
+            msg_box.setWindowTitle("GRAIP Database File")
+            msg_box.setText("Before you can set options, select GRAIP database file.")
+            msg_box.exec_()
+        else:
+            self.dp_log_file, self.rd_log_file, self.is_uninterrupted = self.wizard.options_dlg.get_data_from_dialog(
+                self.dp_log_file, self.rd_log_file, self.is_uninterrupted)
+
     def validatePage(self, *args, **kwargs):
         # This function gets called when the next button is clicked for the FileSetup page
+
         # remove if there are any drainpoint wizard pages
         for page_id in self.wizard.pageIds():
             if page_id > 0:
@@ -279,8 +299,11 @@ class FileSetupPage(QWizardPage):
 
         # cleanup graip database relevant tables in preparation for loading new data
         utils.clear_data_tables(graip_db_file)
+        # hide the Options button
+        self.wizard.btn_options.hide()
         return True
 
+    # TODO: This method is no more used - so delete it
     def browse_project_file(self):
         graip_prj_file, _ = QFileDialog.getSaveFileName(None, 'Enter GRAIP Project Filename', os.getcwd(),
                                                         filter="GRAIP (*.graip)")
@@ -341,7 +364,7 @@ class FileSetupPage(QWizardPage):
     def browse_db_file(self):
         working_dir = self.working_directory if self.working_directory is not None else os.getcwd()
         graip_db_file, _ = QFileDialog.getSaveFileName(None, 'Enter GRAIP Database Filename', working_dir,
-                                                       filter="GRAIP (*.mdb)")
+                                                       filter="GRAIP (*.mdb)", options=QFileDialog.DontConfirmOverwrite)
         # check if the cancel was clicked on the file dialog
         if len(graip_db_file) == 0:
             return
@@ -357,19 +380,37 @@ class FileSetupPage(QWizardPage):
             empty_graip_db_file = os.path.join(this_script_dir, 'GRAIP_DB', "GRAIP.mdb")
             shutil.copyfile(empty_graip_db_file, graip_db_file)
         else:
-            # read file setup data from the FileSetup table and populate various file inputs
-            # in this wizard page
-            conn = pyodbc.connect(utils.MS_ACCESS_CONNECTION % graip_db_file)
-            cursor = conn.cursor()
-            file_setup_row = cursor.execute("SELECT * FROM FileSetup").fetchone()
-            conn.close()
-            if file_setup_row:
-                self.line_edit_dem_file.setText(file_setup_row.DEM_Path)
-                road_shp_files = file_setup_row.Road_Shapefiles.split(',')
-                self.lst_widget_road_shp_files.addItems(road_shp_files)
-                dp_shp_files = file_setup_row.DrainPoints_Shapefiles.split(',')
-                self.lst_widget_dp_shp_files.addItems(dp_shp_files)
+            # prompt the user if the existing db file to be overwritten
+            msg_box = QMessageBox()
+            msg = "File {} exits. Do you want to overwrite it?".format(graip_db_file)
+            msg_box.setText(msg)
+            msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msg_box.setDefaultButton(QMessageBox.No)
+            response = msg_box.exec_()
+            if response == QMessageBox.Yes:
+                os.remove(graip_db_file)
+                this_script_dir = os.path.dirname(os.path.realpath(__file__))
+                empty_graip_db_file = os.path.join(this_script_dir, 'GRAIP_DB', "GRAIP.mdb")
+                shutil.copyfile(empty_graip_db_file, graip_db_file)
 
+            else:
+                # read file setup data from the FileSetup table and populate various file inputs
+                # in this wizard page
+                conn = pyodbc.connect(utils.MS_ACCESS_CONNECTION % graip_db_file)
+                cursor = conn.cursor()
+                file_setup_row = cursor.execute("SELECT * FROM FileSetup").fetchone()
+                conn.close()
+                if file_setup_row:
+                    self.line_edit_dem_file.setText(file_setup_row.DEM_Path)
+                    road_shp_files = file_setup_row.Road_Shapefiles.split(',')
+                    self.lst_widget_road_shp_files.addItems(road_shp_files)
+                    dp_shp_files = file_setup_row.DrainPoints_Shapefiles.split(',')
+                    self.lst_widget_dp_shp_files.addItems(dp_shp_files)
+
+        db_file_name = os.path.basename(graip_db_file)
+        db_file_name_wo_ext = db_file_name.split('.')[0]
+        self.dp_log_file = os.path.join(self.working_directory, db_file_name_wo_ext + 'DP.log')
+        self.rd_log_file = os.path.join(self.working_directory, db_file_name_wo_ext + 'RD.log')
         self.line_edit_mdb_file.setText(graip_db_file)
 
 
@@ -562,6 +603,7 @@ class DrainPointPage(QWizardPage):
             progress_bar_max = len(layer)
             self.progress_bar.setMaximum(progress_bar_max)
             progress_bar_counter = 0
+            track_field_mismatch = []
             # for each drain point in shapefile
             for dp in layer:
                 #if progress_bar_counter % 10 == 0:
@@ -628,24 +670,46 @@ class DrainPointPage(QWizardPage):
 
                             # if no matching definition table was found then write the original data value
                             if metadata_row is None:
+                                is_type_match = False
                                 if field_name in dp_table_field_names:
-                                    dp_row_data[field_name] = dp_att_value
-                                else:
-                                    dp_att_row_data[field_name] = dp_att_value
+                                    # check datatype of the column with the value being assigned
+                                    is_type_match = utils.is_data_type_match(graip_db_file,
+                                                                             "DrainPoints", field_name,
+                                                                             dp_att_value)
+                                    if is_type_match:
+                                        dp_row_data[field_name] = dp_att_value
 
-                                # show message describing the mismatch
-                                dp_shapefile_basename = os.path.basename(dp_shapefile)
-                                msg = "Type mismatch between field '{target_fld_name}' in database and value '{value}' " \
-                                      "in field '{source_fld_name}' in shapefile. " \
-                                      "'{shp_file}'.".format(target_fld_name=field_name, value=dp_att_value,
-                                                             source_fld_name=dp_src_field_name,
-                                                             shp_file=dp_shapefile_basename)
-                                # msg_box = QMessageBox()
-                                # msg_box.setIcon(QMessageBox.Critical)
-                                # msg_box.setText(msg)
-                                # msg_box.exec_()
-                                # TODO: need to write to the log file and other bits of processing
-                                # Ref to getIDFromDefinitionTable function in modGeneralFunction
+                                else:
+                                    is_type_match = utils.is_data_type_match(graip_db_file,
+                                                                             drain_type_def_row.TableName, field_name,
+                                                                             dp_att_value)
+                                    if is_type_match:
+                                        dp_att_row_data[field_name] = dp_att_value
+
+                                if not is_type_match:
+                                    # show message describing the mismatch
+                                    dp_shapefile_basename = os.path.basename(dp_shapefile)
+                                    if field_name not in track_field_mismatch:
+                                        track_field_mismatch.append(field_name)
+                                        action_taken_msg = "A default value will be used"
+                                        log_message = "Type mismatch between field '{target_fld_name}' in database and " \
+                                                      "value '{value}' in field '{source_fld_name}' in shapefile." \
+                                                      "'{shp_file}'.".format(target_fld_name=field_name, value=dp_att_value,
+                                                                             source_fld_name=dp_src_field_name,
+                                                                             shp_file=dp_shapefile_basename)
+                                        msg = log_message + "{}.".format(action_taken_msg)
+
+                                        if not self.wizard.is_uninterrupted:
+                                            msg_box = QMessageBox()
+                                            msg_box.setIcon(QMessageBox.Information)
+                                            msg_box.setText(msg)
+                                            msg_box.setWindowTitle("Mismatch")
+                                            msg_box.exec_()
+
+                                        # TODO: need to write to the log file and other bits of processing
+                                        # Ref to getIDFromDefinitionTable function in modGeneralFunction
+                                        utils.add_entry_to_log_file(self.wizard.dp_log_file, graipid, drain_type_name,
+                                                                    log_message, action_taken_msg)
 
                             else:
                                 # found a matching Definition Table
@@ -690,6 +754,17 @@ class DrainPointPage(QWizardPage):
                                             raise Exception("Aborting processing of this shapefile")
 
                                         value_matching_id = define_value_dlg.definition_id
+                                        action_taken_msg = define_value_dlg.action_taken_msg
+                                        # write to the log table
+                                        log_message = "Value '{}' in field '{}' is not in the '{}' definitions table."
+                                        log_message = log_message.format(dp_att_value, field_name, definition_table_name)
+                                        utils.add_entry_to_error_table(graip_db_file, utils.DP_ERROR_LOG_TABLE_NAME,
+                                                                       graipid, drain_type_name, log_message,
+                                                                       action_taken_msg)
+                                        # write to the log text file
+                                        utils.add_entry_to_log_file(self.wizard.dp_log_file, graipid, drain_type_name,
+                                                                    log_message, action_taken_msg)
+
                                     if field_name in dp_table_field_names:
                                         dp_row_data[field_name] = value_matching_id
                                     else:
@@ -708,10 +783,7 @@ class DrainPointPage(QWizardPage):
 
                 # insert/update data to DrainPoints table
                 if not update_main_dp_table:
-                    # TODO: here we have to dynamically generate the sql insert command similar to how we
-                    # do for the shapefile specific attribute table (see line#691 below)
                     col_names = ",".join(k for k in dp_row_data.keys())
-                    #col_values = ",".join(str(v) for v in dp_row_data.values())
                     col_values = tuple(dp_row_data.values())
                     insert_sql = "INSERT INTO DrainPoints({col_names}) VALUES {col_values}"
                     insert_sql = insert_sql.format(col_names=col_names, col_values=col_values)

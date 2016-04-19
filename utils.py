@@ -4,7 +4,8 @@ import time
 import pyodbc
 from osgeo import ogr, gdal, osr
 from gdalconst import *
-
+from dateutil.parser import parse as date_parse
+from datetime import datetime
 from PySide.QtGui import *
 from PySide.QtCore import *
 
@@ -20,6 +21,8 @@ class GDALFileDriver(object):
     def TifFile(cls):
         return "GTiff"
 
+DP_ERROR_LOG_TABLE_NAME = 'DPErrorLog'
+RD_ERROR_LOG_TABLE_NAME = 'RDErrorLog'
 
 class FileDialog(QFileDialog):
     """
@@ -112,7 +115,7 @@ class OptionsDialog(QDialog):
         self.form_layout.addRow(btn_layout)
 
         self.setWindowTitle("Options")
-        self.resize(600, 300)
+        self.resize(1000, 600)
         self.setLayout(self.form_layout)
         self.setModal(True)
 
@@ -136,16 +139,23 @@ class OptionsDialog(QDialog):
 
         self.line_edit_rd_log_file.setText(rd_log_file)
 
-    def get_log_files(self):
-        return self.line_edit_dp_log_file.text(), self.line_edit_rd_log_file.text()
+    def get_selected_options(self):
+        is_uniterrupted = self.radio_btn_uninterrupted.isChecked()
+
+        return self.line_edit_dp_log_file.text(), self.line_edit_rd_log_file.text(), is_uniterrupted
 
     @staticmethod
-    def get_data_from_dialog(dp_log_file, rd_log_file):
+    def get_data_from_dialog(dp_log_file, rd_log_file, is_uninterrupted=False):
         dialog = OptionsDialog()
+        if is_uninterrupted:
+            dialog.radio_btn_uninterrupted.toggle()
+        else:
+            dialog.radio_btn_step_by_step.toggle()
+
         dialog.line_edit_dp_log_file.setText(dp_log_file)
         dialog.line_edit_rd_log_file.setText(rd_log_file)
         dialog.exec_()
-        return dialog.get_log_files()
+        return dialog.get_selected_options()
 
 
 class DefineValueDialog(QDialog):
@@ -154,6 +164,7 @@ class DefineValueDialog(QDialog):
     add_new = False
     is_cancel = False
     definition_id = 0
+    action_taken_msg = ""
 
     def __init__(self, missing_field_value, missing_field_name, graip_db_file, def_table_name,
                  is_multiplier=False, parent=None):
@@ -328,6 +339,7 @@ class DefineValueDialog(QDialog):
                 self.definition_id = self.definition_ids[self.cmb_definitions.currentIndex()]
                 data = (self.line_edit_def.text(), self.cmb_definitions.currentText(), self.definition_id,
                         self.def_table_name)
+                self.action_taken_msg = "Reassigned value as {}".format(self.cmb_definitions.currentText())
             elif self.radio_btn_use_default.isChecked():
                 self.use_default = True
                 self.definition_id = int(self.line_edit_id.text())
@@ -335,12 +347,13 @@ class DefineValueDialog(QDialog):
                              "VALUES (?, ?, ?, ?)"
                 data = (self.line_edit_def.text(), self.line_edit_default.text(), self.definition_id,
                         self.def_table_name)
+                self.action_taken_msg = "Used Default - {}".format(self.line_edit_default.text())
             elif self.radio_btn_add_new.isChecked():
                 self.add_new = True
                 self.definition_id = int(self.line_edit_id.text())
                 sql_insert = "INSERT INTO {} VALUES (?, ?, ?)".format(self.def_table_name)
                 data = (self.definition_id, self.line_edit_def.text(), self.line_edit_description.text())
-
+                self.action_taken_msg = "Added to definition table as ID {}".format(self.definition_id)
             cursor.execute(sql_insert, data)
             conn.commit()
 
@@ -505,11 +518,11 @@ def delete_shapefile(shp_file_to_delete):
 def create_log_file(graip_db_file, log_file, log_type):
     with open(log_file, 'w') as file_obj:
         file_obj.write("GRAIP Database File:{}".format(graip_db_file) + '\n')
-        file_obj.write(time.strftime("%m-%d-%Y %H:%M:%S"))
+        file_obj.write(time.strftime("%m-%d-%Y %H:%M:%S") + '\n')
         if log_type == 'DP':
-            file_obj.write("GRAIPDID, Drain Type, Error Message, Action Taken")
+            file_obj.write("GRAIPDID, Drain Type, Error Message, Action Taken \n")
         else:
-            file_obj.write("GRAIPDID, Type, Error Message, Action Taken")
+            file_obj.write("GRAIPDID, Road Type, Error Message, Action Taken \n")
 
 
 def clear_data_tables(graip_db_file):
@@ -571,3 +584,73 @@ def set_index_dp_type_combo_box(dp_shp_file, dp_type_combo_box):
     return dp_type_combo_box
 
 
+def add_entry_to_error_table(graip_db_file, err_table_name, graipid, ftype, err_msg, action_taken):
+    if err_table_name not in (DP_ERROR_LOG_TABLE_NAME, RD_ERROR_LOG_TABLE_NAME):
+        raise Exception("{} is not a valid table name for logging error.".format(err_table_name))
+
+    conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
+    cursor = conn.cursor()
+    if err_table_name == DP_ERROR_LOG_TABLE_NAME:
+        sql_insert = "INSERT INTO {} (GRAIPDID, DrainType, ErrorMessage, ActionTaken) VALUES(?, ?, ?, ?)"
+        sql_insert = sql_insert.format(DP_ERROR_LOG_TABLE_NAME)
+    else:
+        sql_insert = "INSERT INTO {} (GRAIPRID, RoadType, ErrorMessage, ActionTaken) VALUES(?, ?, ?, ?)"
+        sql_insert = sql_insert.format(RD_ERROR_LOG_TABLE_NAME)
+
+    data = (graipid, ftype, err_msg, action_taken)
+    cursor.execute(sql_insert, data)
+    conn.commit()
+    conn.close()
+
+
+def add_entry_to_log_file(log_file, graipid, ftype, message, action_taken):
+     with open(log_file, 'a') as file_obj:
+         text_to_write = "{}, {}, {}, {} \n"
+         text_to_write = text_to_write.format(graipid, ftype, message, action_taken)
+         file_obj.write(text_to_write)
+
+
+def is_data_type_match(graip_db_file, table_name, col_name, data_value):
+    conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
+    cursor = conn.cursor()
+    for row in cursor.columns(table=table_name):
+        if row.column_name == col_name:
+            if row.data_type in (pyodbc.SQL_CHAR, pyodbc.SQL_VARCHAR, pyodbc.SQL_WCHAR, pyodbc.SQL_WLONGVARCHAR,
+                                 pyodbc.SQL_WVARCHAR, pyodbc.SQL_LONGVARCHAR):
+                return type(data_value) is str
+            elif row.data_type in (pyodbc.SQL_TINYINT, pyodbc.SQL_SMALLINT, pyodbc.SQL_INTEGER, pyodbc.SQL_BIGINT,
+                                   pyodbc.SQL_NUMERIC):
+                return type(data_value) is int
+            elif row.data_type in (pyodbc.SQL_DECIMAL, pyodbc.SQL_FLOAT, pyodbc.SQL_DOUBLE, pyodbc.SQL_REAL):
+                return type(data_value) is float
+            elif row.data_type in (pyodbc.SQL_TYPE_DATE, pyodbc.SQL_TYPE_TIMESTAMP):
+                if type(data_value) is datetime:
+                    return True
+                if isinstance(data_value, basestring):
+                    if len(data_value) < 8:
+                        return False
+                    else:
+                        # here we are checking only 2 date format (e.g., 01/12/2016 and 2016/12/01)
+                        try:
+                            datetime.strptime(data_value, "%m/%d/%Y")
+                            return True
+                        except:
+                            try:
+                                datetime.strptime(data_value, "%Y/%m/%d")
+                                return True
+                            except:
+                                return False
+
+                return False
+
+    conn.close()
+    return False
+
+def get_table_column_data_type(graip_db_file, table_name, col_name):
+    conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
+    cursor = conn.cursor()
+    for row in cursor.columns(table=table_name):
+        if row.column_name == col_name:
+            return row.data_type
+
+    return None
