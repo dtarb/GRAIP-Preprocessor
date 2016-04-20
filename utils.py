@@ -620,9 +620,9 @@ def is_data_type_match(graip_db_file, table_name, col_name, data_value):
                 return type(data_value) is str
             elif row.data_type in (pyodbc.SQL_TINYINT, pyodbc.SQL_SMALLINT, pyodbc.SQL_INTEGER, pyodbc.SQL_BIGINT,
                                    pyodbc.SQL_NUMERIC):
-                return type(data_value) is int
+                return type(data_value) is int or type(data_value) is float
             elif row.data_type in (pyodbc.SQL_DECIMAL, pyodbc.SQL_FLOAT, pyodbc.SQL_DOUBLE, pyodbc.SQL_REAL):
-                return type(data_value) is float
+                return type(data_value) is float or type(data_value) is int
             elif row.data_type in (pyodbc.SQL_TYPE_DATE, pyodbc.SQL_TYPE_TIMESTAMP):
                 if type(data_value) is datetime:
                     return True
