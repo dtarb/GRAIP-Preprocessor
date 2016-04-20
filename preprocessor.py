@@ -658,6 +658,8 @@ class DrainPointPage(QWizardPage):
                                     and fld_match_table_model.index(row, 0).data() == "PipeDimID(oval)":
                                 prev_row = row - 1
                                 field_name = fld_match_table_model.index(prev_row, 0).data()
+                                # TODO: change the FieldMatch table so that it has FillDepth in place of FillDepthID
+                                # so that the following elif is not needed
                             elif drain_type_def_row.TableName == "StrXingAtt" \
                                     and fld_match_table_model.index(row, 0).data() == "FillDepthID":
                                 field_name = "FillDepth"
@@ -837,7 +839,9 @@ class DrainPointPage(QWizardPage):
                     time_24_format = (time_hour * 100) + time_min
 
                     dt_obj = dp_row.CDate
-                    drain_id = (dt_obj.year * 1000000000) + (dt_obj.month * 10000000) + (dt_obj.day * 100000) + \
+                    # get 2 digit year
+                    year = int(str(dt_obj.year)[2:])
+                    drain_id = (year * 1000000000) + (dt_obj.month * 10000000) + (dt_obj.day * 100000) + \
                                (time_24_format * 10) + dp_row.VehicleID
                     update_sql = "UPDATE DrainPoints SET DrainID=? WHERE GRAIPDID=?"
                     # DrainID is of data type double in graip database
