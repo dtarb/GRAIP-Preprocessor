@@ -62,9 +62,10 @@ class ConsolidateShapeFiles(QDialog):
         self.rd_log_file = rd_log_file
         self.working_directory = working_directory
         v_layout = QVBoxLayout()
-        msg = """Checking for orphan drain points, road segments, and duplicate ids and
-              then consolidate multiple drain points shapefiles and road lines shapefiles.
-         """
+        # msg = """Checking for orphan drain points, road segments, and duplicate ids and
+        #       then consolidate multiple drain points shapefiles and road lines shapefiles.
+        #  """
+        msg = "Checking for orphan drain points, road segments, and duplicate ids ..."
         self.message = QLabel(msg)
         self.message.wordWrap()
         v_layout.addWidget(self.message)
@@ -87,6 +88,7 @@ class ConsolidateShapeFiles(QDialog):
         self.check_for_orphan_drain_points()
         self.consolidate_dp_shp_files()
         self.consolidate_rd_shp_files()
+        self.message.setText("Preprocessing successful")
         self.btn_close.setEnabled(True)
 
     def check_for_orphan_drain_points(self):
@@ -138,14 +140,12 @@ class ConsolidateShapeFiles(QDialog):
             self.progress_bar.setValue(progress_value)
 
         conn.close()
-        # self.consolidate_dp_shp_files()
-        # self.consolidate_rd_shp_files()
-        # self.btn_close.setEnabled(True)
 
     def consolidate_dp_shp_files(self):
+        self.message.setText("Consolidating multiple drain points shapefiles...")
         conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
         cursor = conn.cursor()
-        dp_rows = cursor.execute("SELECT GRAIPDID FROM DrainPoints").fetchall()
+        dp_rows = cursor.execute("SELECT GRAIPDID FROM DrainPoints ORDER BY GRAIPDID").fetchall()
         dp_record_count = len(dp_rows)
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(dp_record_count)
@@ -193,9 +193,10 @@ class ConsolidateShapeFiles(QDialog):
         conn.close()
 
     def consolidate_rd_shp_files(self):
+        self.message.setText("Consolidating multiple road lines shapefiles...")
         conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
         cursor = conn.cursor()
-        rd_rows = cursor.execute("SELECT GRAIPRID FROM RoadLines").fetchall()
+        rd_rows = cursor.execute("SELECT GRAIPRID FROM RoadLines ORDER BY GRAIPRID").fetchall()
         rd_record_count = len(rd_rows)
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(rd_record_count)
@@ -288,7 +289,7 @@ class OptionsDialog(QDialog):
         self.form_layout.addRow(btn_layout)
 
         self.setWindowTitle("Options")
-        self.resize(1000, 600)
+        self.resize(600, 250)
         self.setLayout(self.form_layout)
         self.setModal(True)
 
@@ -455,21 +456,15 @@ class DefineValueDialog(QDialog):
                         match_count = 0
                         for i in range(len(missing_field_value)):
                             if i < len(definition):
-                                if missing_field_value[i].lower() == definition[i].lower():
+                                if missing_field_value[0:i+1].lower() == definition[0:i+1].lower():
                                     match_count += 1
-                            else:
-                                break
+
                         if match_count > 2:
                             initial_combobox_index = index
                             field_match_found = True
                             break
                         elif match_count == 1:
                             initial_combobox_index = index
-
-                        # if self.missing_field_value[0:2].lower() == definition[0:2].lower():
-                        #     initial_combobox_index = index
-                        #     field_match_found = True
-                        #     break
 
             self.cmb_definitions.setCurrentIndex(initial_combobox_index)
             # matching found

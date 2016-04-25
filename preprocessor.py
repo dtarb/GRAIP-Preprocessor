@@ -32,7 +32,6 @@ class Preprocessor(QWizard):
         self.setWindowTitle("GRAIP Preprocessor (Version 2.0)")
         # add a custom button
         self.btn_options = QPushButton('Options')
-        #self.btn_options.clicked.connect(self.show_options_dialog)
         self.setButton(self.CustomButton1, self.btn_options)
         self.setOptions(self.HaveCustomButton1)
 
@@ -42,16 +41,12 @@ class Preprocessor(QWizard):
 
         self.currentIdChanged.connect(self.show_options_button)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        self.resize(1000, 600)
+        self.resize(800, 600)
 
     def show_options_button(self):
         if self.currentId() == 0:
             # show the Options button if it is the FileSetup page
             self.btn_options.show()
-
-    # def show_options_dialog(self):
-    #     self.dp_log_file, self.rd_log_file, self.is_uninterrupted = self.options_dlg.get_data_from_dialog(
-    #         self.dp_log_file, self.rd_log_file)
 
     def run(self):
         # Show the form
@@ -59,9 +54,6 @@ class Preprocessor(QWizard):
 
         # Run the qt application
         qt_app.exec_()
-        # msg_box = QMessageBox()
-        # msg_box.setText("Done, Log file:" + self.dp_log_file)
-        # msg_box.exec_()
 
 
 class FileSetupPage(QWizardPage):
@@ -89,18 +81,6 @@ class FileSetupPage(QWizardPage):
         layout_mdb.addWidget(self.btn_browse_mdb_file)
         self.group_box_mdb_file.setLayout(layout_mdb)
         self.form_layout.addRow(self.group_box_mdb_file)
-
-        # self.group_box_prj_file = QGroupBox("Project File")
-        # self.line_edit_prj_file = QLineEdit()
-        # self.btn_browse_prg_file = QPushButton('....')
-        # # connect the browse button to the function
-        # self.btn_browse_prg_file.clicked.connect(self.browse_project_file)
-        #
-        # layout_prj = QHBoxLayout()
-        # layout_prj.addWidget(self.line_edit_prj_file)
-        # layout_prj.addWidget(self.btn_browse_prg_file)
-        # self.group_box_prj_file.setLayout(layout_prj)
-        # self.form_layout.addRow(self.group_box_prj_file)
 
         layout_input_files = QVBoxLayout()
         self.group_box_input_files = QGroupBox("Input Files")
@@ -173,16 +153,6 @@ class FileSetupPage(QWizardPage):
         self.dp_log_file = self.wizard.dp_log_file
         self.rd_log_file = self.wizard.rd_log_file
         self.is_uninterrupted = self.wizard.is_uninterrupted
-        # self.group_box_mdb_file = QGroupBox("GRAIP Database (*.mdb)")
-        # self.line_edit_mdb_file = QLineEdit()
-        # self.btn_browse_mdb_file = QPushButton('....')
-        # self.btn_browse_mdb_file.clicked.connect(self.browse_db_file)
-        #
-        # layout_mdb = QHBoxLayout()
-        # layout_mdb.addWidget(self.line_edit_mdb_file)
-        # layout_mdb.addWidget(self.btn_browse_mdb_file)
-        # self.group_box_mdb_file.setLayout(layout_mdb)
-        # self.form_layout.addRow(self.group_box_mdb_file)
 
         # make some of the page fields available to other pages
         # make the list widget for drain point shapefiles available to other pages of this wizard
@@ -202,6 +172,22 @@ class FileSetupPage(QWizardPage):
             self.dp_log_file, self.rd_log_file, self.is_uninterrupted = self.wizard.options_dlg.get_data_from_dialog(
                 self.dp_log_file, self.rd_log_file, self.is_uninterrupted)
 
+    def isComplete(self, *args, **kwargs):
+
+        if self.wizard.currentId() == 0:
+            if len(self.line_edit_mdb_file.text().strip()) == 0:
+                return False
+            elif len(self.line_edit_dem_file.text().strip()) == 0:
+                return False
+            elif self.lst_widget_road_shp_files.count() == 0:
+                return False
+            elif self.lst_widget_dp_shp_files.count() == 0:
+                return False
+            else:
+                return True
+
+        return False
+
     def validatePage(self, *args, **kwargs):
         # This function gets called when the next button is clicked for the FileSetup page
 
@@ -212,19 +198,14 @@ class FileSetupPage(QWizardPage):
 
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Critical)
-        # check project file has been selected
-        # if len(self.line_edit_prj_file.text().strip()) == 0:
-        #     msg_box.setText("Project file is required")
-        #     msg_box.exec_()
-        #     return False
-
-        if len(self.line_edit_dem_file.text().strip()) == 0:
-            msg_box.setText("DEM file is required")
-            msg_box.exec_()
-            return False
 
         if len(self.line_edit_mdb_file.text().strip()) == 0:
             msg_box.setText("GRAIP database file is required")
+            msg_box.exec_()
+            return False
+
+        if len(self.line_edit_dem_file.text().strip()) == 0:
+            msg_box.setText("DEM file is required")
             msg_box.exec_()
             return False
 
@@ -340,6 +321,7 @@ class FileSetupPage(QWizardPage):
             return
 
         self.line_edit_dem_file.setText(QFileInfo(graip_dem_file).path())
+        self.completeChanged.emit()
 
     def browse_rd_shp_files(self):
         working_dir = self.working_directory if self.working_directory is not None else os.getcwd()
@@ -348,11 +330,13 @@ class FileSetupPage(QWizardPage):
 
         # TODO: If the file already in the list widget do not add that
         self.lst_widget_road_shp_files.addItems(rd_shp_files)
+        self.completeChanged.emit()
 
     def remove_rd_shp_files(self):
         for shp_file_item_index in self.lst_widget_road_shp_files.selectedIndexes():
             item = self.lst_widget_road_shp_files.takeItem(shp_file_item_index.row())
             item = None
+        self.completeChanged.emit()
 
     def browse_dp_shp_files(self):
         working_dir = self.working_directory if self.working_directory is not None else os.getcwd()
@@ -361,11 +345,13 @@ class FileSetupPage(QWizardPage):
 
         # TODO: If the file already in the list widget do not add that
         self.lst_widget_dp_shp_files.addItems(dp_shp_files)
+        self.completeChanged.emit()
 
     def remove_dp_shp_files(self):
         for shp_file_item_index in self.lst_widget_dp_shp_files.selectedIndexes():
             item = self.lst_widget_dp_shp_files.takeItem(shp_file_item_index.row())
             item = None
+        self.completeChanged.emit()
 
     def browse_db_file(self):
         working_dir = self.working_directory if self.working_directory is not None else os.getcwd()
@@ -420,60 +406,13 @@ class FileSetupPage(QWizardPage):
         self.dp_log_file = os.path.join(self.working_directory, db_file_name_wo_ext + 'DP.log')
         self.rd_log_file = os.path.join(self.working_directory, db_file_name_wo_ext + 'RD.log')
         self.line_edit_mdb_file.setText(graip_db_file)
+        self.completeChanged.emit()
 
 
 class DrainPointPage(utils.ImportWizardPage):
-    # def __init__(self, shp_file_index=0, shp_file="", shp_file_count=0, parent=None):
-    #     super(DrainPointPage, self).__init__(parent=parent)
-    #     self.wizard = parent
-    #     self.file_index = shp_file_index
-    #     self.working_directory = None
-    #     self.lst_widget_dp_shp_files = None
-    #     self.no_match_use_default = None
-    #     self.form_layout = QFormLayout()
-    #     self.msg_label = QLabel()
-    #     self.msg_label.setText("Match a source field from the input file to the appropriate target field "
-    #                            "in the database")
-    #     self.msg_label.setWordWrap(True)
-    #     self.form_layout.addRow("", self.msg_label)
-    #
-    #     self.group_box_imported_file = QGroupBox("File being imported")
-    #     self.line_edit_imported_file = QLineEdit()
-    #     self.line_edit_imported_file.setText(shp_file)
-    #     v_file_layout = QVBoxLayout()
-    #     v_file_layout.addWidget(self.line_edit_imported_file)
-    #     self.group_box_imported_file.setLayout(v_file_layout)
-    #     self.form_layout.addRow(self.group_box_imported_file)
-    #
-    #     self.v_dp_layout = QVBoxLayout()
-    #     self.group_box_set_field_names = QGroupBox("Set Field Names")
-    #     self.dp_label = QLabel("Drain Point Type")
-    #     self.dp_type_combo_box = QComboBox()
-    #     self.v_dp_layout.addWidget(self.dp_label)
-    #     self.v_dp_layout.addWidget(self.dp_type_combo_box)
-    #
-    #     self.table_label = QLabel("For each target field, select the source field that should be loaded into it")
-    #     # TODO: need to pass data for the table to the TableWidget()
-    #     self.field_match_table_wizard = None
-    #     self.v_dp_layout.addWidget(self.table_label)
-    #
-    #     self.group_box_set_field_names.setLayout(self.v_dp_layout)
-    #     self.form_layout.addRow(self.group_box_set_field_names)
-    #
-    #     # progress bar
-    #     self.group_box_import_progress = QGroupBox("Import Progress")
-    #     v_layout = QVBoxLayout()
-    #     self.progress_bar = QProgressBar()
-    #     self.progress_bar.setMinimum(0)
-    #     self.progress_bar.setValue(0)
-    #     v_layout.addWidget(self.progress_bar)
-    #     self.group_box_import_progress.setLayout(v_layout)
-    #
-    #     self.form_layout.addRow(self.group_box_import_progress)
-    #     self.setLayout(self.form_layout)
-    #     self.setTitle("Import Drain Point Shapefile: {} of {}".format(self.file_index + 1, shp_file_count))
 
     def initializePage(self, *args, **kwargs):
+        self.progress_bar.setValue(0)
         graip_db_file = self.wizard.line_edit_mdb_file.text()
         conn = pyodbc.connect(utils.MS_ACCESS_CONNECTION % graip_db_file)
         cursor = conn.cursor()
@@ -514,38 +453,19 @@ class DrainPointPage(utils.ImportWizardPage):
                         matching_field = None
                         for shp_att_name in shp_file_attribute_names:
                             if len(shp_att_name) > 2 and len(source_field_row.DBFField) > 2:
-                                # match at least any first 3 characters
+                                # match first 3 characters
                                 match_count = 0
                                 for i in range(len(shp_att_name)):
-                                    if i < len(source_field_row.DBFField):
-                                        if shp_att_name[i].lower() == source_field_row.DBFField[i].lower():
-                                            match_count += 1
-                                    else:
-                                        break
+                                    if shp_att_name[0:i+1].lower() == source_field_row.DBFField[0:i+1].lower():
+                                        match_count += 1
                                 if match_count > 2:
                                     matching_field = shp_att_name
                                     break
-                            #         source_field_col_data.append(shp_att_name)
-                            #     else:
-                            #         source_field_col_data.append(self.no_match_use_default)
-                            # else:
-                            #     source_field_col_data.append(self.no_match_use_default)
+
                         if matching_field is not None:
                             source_field_col_data.append(matching_field)
                         else:
                             source_field_col_data.append(self.no_match_use_default)
-
-                    # if not found_match:
-                    #     for shp_att_name in shp_file_attribute_names:
-                    #         if len(shp_att_name) > 2 and len(source_field_row.DBFField) > 2:
-                    #             # match first 3 characters
-                    #             if shp_att_name[0:2].lower() == source_field_row.DBFField[0:2].lower():
-                    #                 #source_field_col_data.append(source_field_row.DBFField)
-                    #                 source_field_col_data.append(shp_att_name)
-                    #                 found_match = True
-                    #                 break
-                    # if not found_match:
-                    #     source_field_col_data.append(self.no_match_use_default)
 
             target_source_combined = zip(target_field_col_data, source_field_col_data)
             table_data = [[item[0], item[1]] for item in target_source_combined]
@@ -578,17 +498,6 @@ class DrainPointPage(utils.ImportWizardPage):
             cursor = conn.cursor()
             dp_table_field_names = ['GRAIPDID', 'DrainTypeID', 'CDate', 'CTime', 'VehicleID', 'DrainID',
                                     'StreamConnectID', 'OrphanID', 'DischargeToID', 'Comments']
-            # Testing strategy for inserting records to DrainPoints table
-            # cursor.execute("INSERT INTO DrainPoints (GRAIPDID, CTime) VALUES(?, ?)", -1, "")
-            # conn.commit()
-            # # get the record just added
-            # dp_new_row = cursor.execute("SELECT * FROM DrainPoints WHERE GRAIPDID=?", -1).fetchone()
-            # if dp_new_row:
-            #     print "working"
-            # else:
-            #     print "failed"
-            #
-            # return
 
             drain_type_name = self.dp_type_combo_box.currentText()
             # find drain type attribute table name - this is the table to which we will be writing data in addition
@@ -834,7 +743,7 @@ class DrainPointPage(utils.ImportWizardPage):
                         del dp_row_data['GRAIPDID']
 
                     col_names = ",".join(k + "=?" for k in dp_row_data.keys())
-                    params = tuple(dp_row_data.values()) + tuple(graipid,)
+                    params = tuple(dp_row_data.values()) + (graipid,)
                     update_sql = "UPDATE DrainPoints SET {}  WHERE GRAIPDID=?".format(col_names)
                     cursor.execute(update_sql, params)
 
@@ -904,6 +813,15 @@ class DrainPointPage(utils.ImportWizardPage):
             # return True will take to the next page. return False will keep on the same page
             return not is_error
 
+    def cleanupPage(self, *args, **kwargs):
+        """
+        This function is called when the wizard back button is clicked
+        Here we are resting the progress bar for the page to which the back button will take
+        """
+        if self.wizard.wizard.currentId() > 0:
+            prev_page_id = self.wizard.wizard.currentId() - 1
+            prev_page = self.wizard.wizard.page(prev_page_id)
+            prev_page.progress_bar.setValue(0)
 
 class RoadLinePage(utils.ImportWizardPage):
 
@@ -951,7 +869,6 @@ class RoadLinePage(utils.ImportWizardPage):
                             break
 
                     if not found_match:
-                        # TODO: use the following updated logic for DrainPoints wizard page
                         match_field = None
                         for shp_att_name in shp_file_attribute_names:
                             if len(shp_att_name) > 2 and len(source_field_row.DBFField) > 2:
@@ -959,18 +876,13 @@ class RoadLinePage(utils.ImportWizardPage):
                                 match_count = 0
                                 for i in range(len(shp_att_name)):
                                     if i < len(source_field_row.DBFField):
-                                        if shp_att_name[i].lower() == source_field_row.DBFField[i].lower():
+                                        if shp_att_name[0:i+1].lower() == source_field_row.DBFField[0:i+1].lower():
                                             match_count += 1
-                                    else:
-                                        break
+
                                 if match_count > 2:
                                     match_field = shp_att_name
                                     break
-                                    #source_field_col_data.append(shp_att_name)
-                                # else:
-                                #     source_field_col_data.append(self.no_match_use_default)
-                            # else:
-                            #     source_field_col_data.append(self.no_match_use_default)
+
                         if match_field is not None:
                             source_field_col_data.append(match_field)
                         else:
@@ -1178,7 +1090,7 @@ class RoadLinePage(utils.ImportWizardPage):
                         del rd_row_data['GRAIPRID']
 
                     col_names = ",".join(k + "=?" for k in rd_row_data.keys())
-                    params = tuple(rd_row_data.values()) + tuple(graipid,)
+                    params = tuple(rd_row_data.values()) + (graipid,)
                     update_sql = "UPDATE RoadLines SET {}  WHERE GRAIPRID=?".format(col_names)
                     cursor.execute(update_sql, params)
 
@@ -1282,6 +1194,16 @@ class RoadLinePage(utils.ImportWizardPage):
 
             # return True will take to the next page. return False will keep on the same page
             return not is_error
+
+    def cleanupPage(self, *args, **kwargs):
+        """
+        This function is called when the wizard back button is clicked
+        Here we are resting the progress bar for the page to which the back button will take
+        """
+        if self.wizard.wizard.currentId() > 0:
+            prev_page_id = self.wizard.wizard.currentId() - 1
+            prev_page = self.wizard.wizard.page(prev_page_id)
+            prev_page.progress_bar.setValue(0)
 
 app = Preprocessor()
 app.run()
