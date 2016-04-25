@@ -52,6 +52,179 @@ class FileDialog(QFileDialog):
         return self.selectedFiles
 
 
+class ConsolidateShapeFiles(QDialog):
+    def __init__(self, graip_db_file, dp_shp_files, rd_shp_files, dp_log_file, rd_log_file, working_directory, parent=None):
+        super(ConsolidateShapeFiles, self).__init__(parent)
+        self.graip_db_file = graip_db_file
+        self.dp_shp_files = dp_shp_files
+        self.rd_shp_files = rd_shp_files
+        self.dp_log_file = dp_log_file
+        self.rd_log_file = rd_log_file
+        self.working_directory = working_directory
+        v_layout = QVBoxLayout()
+        msg = """Checking for orphan drain points, road segments, and duplicate ids and
+              then consolidate multiple drain points shapefiles and road lines shapefiles.
+         """
+        self.message = QLabel(msg)
+        self.message.wordWrap()
+        v_layout.addWidget(self.message)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        v_layout.addWidget(self.progress_bar)
+        self.btn_close = QDialogButtonBox(QDialogButtonBox.Close,
+                                        Qt.Horizontal, self)
+        self.btn_close.setEnabled(False)
+        self.btn_close.rejected.connect(self.reject)
+        v_layout.addWidget(self.btn_close)
+        self.setLayout(v_layout)
+        self.setWindowTitle("Consolidating")
+        self.setFixedSize(600, 100)
+        self.setModal(True)
+
+    def do_process(self):
+        self.check_for_orphan_drain_points()
+        self.consolidate_dp_shp_files()
+        self.consolidate_rd_shp_files()
+        self.btn_close.setEnabled(True)
+
+    def check_for_orphan_drain_points(self):
+        conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
+        cursor = conn.cursor()
+        dp_rows = cursor.execute("SELECT * FROM DrainPoints").fetchall()
+        dp_record_count = len(dp_rows)
+        self.progress_bar.setMaximum(dp_record_count)
+        for i, dp_row in enumerate(dp_rows):
+            graipdid = dp_row.GRAIPDID
+            dp_def_row = cursor.execute("SELECT * FROM DrainTypeDefinitions WHERE DrainTypeID=?", dp_row.DrainTypeID).fetchone()
+            sql_select = "SELECT GRAIPDID1, GRAIPDID2 FROM RoadLines WHERE GRAIPDID1=? OR GRAIPDID2=?"
+            rd_rows = cursor.execute(sql_select, (graipdid, graipdid)).fetchall()
+            if rd_rows is None:
+                add_entry_to_log_file(self.dp_log_file, graipdid, dp_def_row.DrainTypeName, "Orphan Drain Point",
+                                      "Nothing")
+                add_entry_to_error_table(self.graip_db_file, DP_ERROR_LOG_TABLE_NAME, graipdid,
+                                         dp_def_row.DrainTypeName, "Orphan Drain Point", "Nothing")
+
+            # check if there are duplicate drainids in DrainPoints table
+            dp_rows_for_drainid = cursor.execute("SELECT * FROM DrainPoints WHERE DrainID=?", dp_row.DrainID).fetchall()
+            for dp_row_di in dp_rows_for_drainid:
+                msg = "Duplicate DrainID:{}".format(dp_row.DrainID)
+                add_entry_to_log_file(self.dp_log_file, dp_row_di.GRAIPDID, dp_def_row.DrainTypeName, msg,
+                                      "Nothing")
+                add_entry_to_error_table(self.graip_db_file, DP_ERROR_LOG_TABLE_NAME, dp_row_di.GRAIPDID,
+                                         dp_def_row.DrainTypeName, msg, "Nothing")
+
+            # update progressbar
+            progress_value = i + 1
+            self.progress_bar.setValue(progress_value)
+
+        rd_rows = cursor.execute("SELECT * FROM RoadLines").fetchall()
+        rd_record_count = len(rd_rows)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(rd_record_count)
+        for i, rd_row in enumerate(rd_rows):
+            graiprid = rd_row.GRAIPRID
+            sql_select = "SELECT * FROM DrainPoints WHERE GRAIPDID=? OR GRAIPDID=?"
+            dp_rows = cursor.execute(sql_select, (rd_row.GRAIPDID1, rd_row.GRAIPDID2)).fetchall()
+            if dp_rows is None:
+                add_entry_to_log_file(self.dp_log_file, graiprid, "Road Line", "Orphan Road Segment",
+                                      "Nothing")
+                add_entry_to_error_table(self.graip_db_file, RD_ERROR_LOG_TABLE_NAME, graiprid,
+                                         "Road Line", "Orphan Road Segment", "Nothing")
+            # update progressbar
+            progress_value = i + 1
+
+            self.progress_bar.setValue(progress_value)
+
+        conn.close()
+        # self.consolidate_dp_shp_files()
+        # self.consolidate_rd_shp_files()
+        # self.btn_close.setEnabled(True)
+
+    def consolidate_dp_shp_files(self):
+        conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
+        cursor = conn.cursor()
+        dp_rows = cursor.execute("SELECT GRAIPDID FROM DrainPoints").fetchall()
+        dp_record_count = len(dp_rows)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(dp_record_count)
+        # set up the shapefile driver
+        driver = ogr.GetDriverByName(GDALFileDriver.ShapeFile())
+
+        # create the data source
+        dp_consolidated_shp_file = os.path.join(self.working_directory, "DrainPoints.shp")
+        data_source = driver.CreateDataSource(dp_consolidated_shp_file)
+        # create the layer
+        srs = osr.SpatialReference()
+        layer = data_source.CreateLayer("DrainPoints", srs, ogr.wkbPoint)
+        # Add the field GRAIPDID
+        field_name = ogr.FieldDefn("GRAIPDID", ogr.OFTInteger)
+        layer.CreateField(field_name)
+
+        for dp_row in dp_rows:
+            feature = ogr.Feature(layer.GetLayerDefn())
+            # Set the attributes using the values from the delimited text file
+            feature.SetField("GRAIPDID", dp_row.GRAIPDID)
+            # Create the feature in the layer (shapefile)
+            layer.CreateFeature(feature)
+            # Destroy the feature to free resources
+            feature.Destroy()
+
+            self.progress_bar.setValue(dp_row.GRAIPDID + 1)
+
+        # NOTE: This how the old graip used to do
+        # gripdid = 0
+        # for shp_file in self.dp_shp_files:
+        #     gdal_driver = ogr.GetDriverByName(GDALFileDriver.ShapeFile())
+        #     data_source = gdal_driver.Open(shp_file, GA_ReadOnly)
+        #     layer = data_source.GetLayer(0)
+        #     for i in range(len(layer)):
+        #         feature = ogr.Feature(layer.GetLayerDefn())
+        #         # Set the attributes using the values from the delimited text file
+        #         gripdid += 1
+        #         feature.SetField("GRAIPDID", gripdid)
+        #         # Create the feature in the layer (shapefile)
+        #         layer.CreateFeature(feature)
+        #         # Destroy the feature to free resources
+        #         feature.Destroy()
+
+        data_source.Destroy()
+        conn.close()
+
+    def consolidate_rd_shp_files(self):
+        conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
+        cursor = conn.cursor()
+        rd_rows = cursor.execute("SELECT GRAIPRID FROM RoadLines").fetchall()
+        rd_record_count = len(rd_rows)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMaximum(rd_record_count)
+        # set up the shapefile driver
+        driver = ogr.GetDriverByName(GDALFileDriver.ShapeFile())
+
+        # create the data source
+        rd_consolidated_shp_file = os.path.join(self.working_directory, "RoadLines.shp")
+        data_source = driver.CreateDataSource(rd_consolidated_shp_file)
+        # create the layer
+        srs = osr.SpatialReference()
+        layer = data_source.CreateLayer("RoadLines", srs, ogr.wkbLineString)
+        # Add the field GRAIPRID
+        field_name = ogr.FieldDefn("GRAIPRID", ogr.OFTInteger)
+        layer.CreateField(field_name)
+        for rd_row in rd_rows:
+            feature = ogr.Feature(layer.GetLayerDefn())
+            # Set the attributes using the values from the delimited text file
+            feature.SetField("GRAIPRID", rd_row.GRAIPRID)
+            # Create the feature in the layer (shapefile)
+            layer.CreateFeature(feature)
+            # Destroy the feature to free resources
+            feature.Destroy()
+            self.progress_bar.setValue(rd_row.GRAIPRID + 1)
+
+        data_source.Destroy()
+        conn.close()
+
+
 class OptionsDialog(QDialog):
     def __init__(self, parent=None):
         super(OptionsDialog, self).__init__(parent)
@@ -270,15 +443,34 @@ class DefineValueDialog(QDialog):
             # set the current index of the combobox
             initial_combobox_index = 0
             field_match_found = False
-            if len(self.missing_field_value) > 2:
+            if isinstance(self.missing_field_value, int):
+                print str(self.missing_field_value)
+            missing_field_value = self.missing_field_value.replace(" ", "")
+            if len(missing_field_value) > 2:
                 for index in range(self.cmb_definitions.count()):
                     definition = self.cmb_definitions.itemText(index)
+                    definition = definition.replace(" ", "")
                     if len(definition) > 2:
-                        # match first 3 characters
-                        if self.missing_field_value[0:2].lower() == definition[0:2].lower():
+                        # match at least any first 3 characters
+                        match_count = 0
+                        for i in range(len(missing_field_value)):
+                            if i < len(definition):
+                                if missing_field_value[i].lower() == definition[i].lower():
+                                    match_count += 1
+                            else:
+                                break
+                        if match_count > 2:
                             initial_combobox_index = index
                             field_match_found = True
                             break
+                        elif match_count == 1:
+                            initial_combobox_index = index
+
+                        # if self.missing_field_value[0:2].lower() == definition[0:2].lower():
+                        #     initial_combobox_index = index
+                        #     field_match_found = True
+                        #     break
+
             self.cmb_definitions.setCurrentIndex(initial_combobox_index)
             # matching found
             if field_match_found:
@@ -351,8 +543,13 @@ class DefineValueDialog(QDialog):
             elif self.radio_btn_add_new.isChecked():
                 self.add_new = True
                 self.definition_id = int(self.line_edit_id.text())
-                sql_insert = "INSERT INTO {} VALUES (?, ?, ?)".format(self.def_table_name)
-                data = (self.definition_id, self.line_edit_def.text(), self.line_edit_description.text())
+                if not self.is_multiplier:
+                    sql_insert = "INSERT INTO {} VALUES (?, ?, ?)".format(self.def_table_name)
+                    data = (self.definition_id, self.line_edit_def.text(), self.line_edit_description.text())
+                else:
+                    sql_insert = "INSERT INTO {} VALUES (?, ?, ?, ?)".format(self.def_table_name)
+                    data = (self.definition_id, self.line_edit_def.text(), self.line_edit_description.text(),
+                            self.line_edit_multiplier.text())
                 self.action_taken_msg = "Added to definition table as ID {}".format(self.definition_id)
             cursor.execute(sql_insert, data)
             conn.commit()
@@ -504,6 +701,109 @@ class TableWidget(QWidget):
                     print("row:" + str(row) + " col:" + str(col) + " value:" + value)
 
 
+class ImportWizardPage(QWizardPage):
+    def __init__(self, shp_type='DP', shp_file_index=0, shp_file="", shp_file_count=0, parent=None):
+        super(ImportWizardPage, self).__init__(parent=parent)
+        self.wizard = parent
+        self.file_index = shp_file_index
+        self.working_directory = None
+        self.lst_widget_dp_shp_files = None
+        self.no_match_use_default = None
+        self.form_layout = QFormLayout()
+        self.msg_label = QLabel()
+        self.msg_label.setText("Match a source field from the input file to the appropriate target field "
+                               "in the database")
+        self.msg_label.setWordWrap(True)
+        self.form_layout.addRow("", self.msg_label)
+
+        self.group_box_imported_file = QGroupBox("File being imported")
+        self.line_edit_imported_file = QLineEdit()
+        self.line_edit_imported_file.setText(shp_file)
+        v_file_layout = QVBoxLayout()
+        v_file_layout.addWidget(self.line_edit_imported_file)
+        self.group_box_imported_file.setLayout(v_file_layout)
+        self.form_layout.addRow(self.group_box_imported_file)
+
+        self.v_set_fields_layout = QVBoxLayout()
+        self.group_box_set_field_names = QGroupBox("Set Field Names")
+        if shp_type == "DP":
+            self.dp_label = QLabel("Drain Point Type")
+            self.dp_type_combo_box = QComboBox()
+            self.v_set_fields_layout.addWidget(self.dp_label)
+            self.v_set_fields_layout.addWidget(self.dp_type_combo_box)
+        else:
+            h_rn_layout = QHBoxLayout()
+            v_rn_layout = QVBoxLayout()
+            self.rd_rn_label = QLabel("Road Network")
+            self.rd_network_combo_box = QComboBox()
+            self.rd_network_combo_box.currentIndexChanged.connect(self.update_rd_network_gui_elements)
+            v_rn_layout.addWidget(self.rd_rn_label)
+            v_rn_layout.addWidget(self.rd_network_combo_box)
+            h_rn_layout.addLayout(v_rn_layout)
+
+            v_ber_layout = QVBoxLayout()
+            self.rd_ber_label = QLabel("Base Erosion Rate (kg/m/yr)")
+            self.rd_ber_line_edit = QLineEdit()
+            self.rd_ber_line_edit.setEnabled(False)
+            v_ber_layout.addWidget(self.rd_ber_label)
+            v_ber_layout.addWidget(self.rd_ber_line_edit)
+            h_rn_layout.addLayout(v_ber_layout)
+
+            v_des_layout = QVBoxLayout()
+            self.rd_des_label = QLabel("Description")
+            self.rd_des_line_edit = QLineEdit()
+            self.rd_des_line_edit.setEnabled(False)
+            v_des_layout.addWidget(self.rd_des_label)
+            v_des_layout.addWidget(self.rd_des_line_edit)
+            h_rn_layout.addLayout(v_des_layout)
+
+            self.add_rn_button = QPushButton()
+            self.add_rn_button.setText('+')
+            h_rn_layout.addWidget(self.add_rn_button)
+            self.del_rn_button = QPushButton()
+            self.del_rn_button.setText('-')
+            h_rn_layout.addWidget(self.del_rn_button)
+
+            self.v_set_fields_layout.addLayout(h_rn_layout)
+
+        self.table_label = QLabel("For each target field, select the source field that should be loaded into it")
+        # TODO: need to pass data for the table to the TableWidget()
+        self.field_match_table_wizard = None
+        self.v_set_fields_layout.addWidget(self.table_label)
+
+        self.group_box_set_field_names.setLayout(self.v_set_fields_layout)
+        self.form_layout.addRow(self.group_box_set_field_names)
+
+        # progress bar
+        self.group_box_import_progress = QGroupBox("Import Progress")
+        v_layout = QVBoxLayout()
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setValue(0)
+        v_layout.addWidget(self.progress_bar)
+        self.group_box_import_progress.setLayout(v_layout)
+
+        self.form_layout.addRow(self.group_box_import_progress)
+        self.setLayout(self.form_layout)
+        if shp_type == "DP":
+            self.setTitle("Import Drain Point Shapefile: {} of {}".format(self.file_index + 1, shp_file_count))
+        else:
+            self.setTitle("Import Road Line Shapefile: {} of {}".format(self.file_index + 1, shp_file_count))
+
+    def update_rd_network_gui_elements(self):
+        graip_db_file = self.wizard.line_edit_mdb_file.text()
+        conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
+        cursor = conn.cursor()
+        network_combo_index = self.rd_network_combo_box.currentIndex()
+        road_network_id = network_combo_index + 1
+        rd_network_def_row = cursor.execute("SELECT * FROM RoadNetworkDefinitions WHERE RoadNetworkID=?",
+                                            road_network_id).fetchone()
+        if rd_network_def_row is not None:
+            self.rd_ber_line_edit.setText(str(rd_network_def_row.BaseRate))
+            self.rd_des_line_edit.setText(rd_network_def_row.Description)
+        conn.close()
+
+
 def delete_shapefile(shp_file_to_delete):
     if os.path.isfile(shp_file_to_delete):
         # prompt to delete the file
@@ -604,10 +904,10 @@ def add_entry_to_error_table(graip_db_file, err_table_name, graipid, ftype, err_
 
 
 def add_entry_to_log_file(log_file, graipid, ftype, message, action_taken):
-     with open(log_file, 'a') as file_obj:
-         text_to_write = "{}, {}, {}, {} \n"
-         text_to_write = text_to_write.format(graipid, ftype, message, action_taken)
-         file_obj.write(text_to_write)
+    with open(log_file, 'a') as file_obj:
+        text_to_write = "{}, {}, {}, {} \n"
+        text_to_write = text_to_write.format(graipid, ftype, message, action_taken)
+        file_obj.write(text_to_write)
 
 
 def is_data_type_match(graip_db_file, table_name, col_name, data_value):
@@ -646,6 +946,33 @@ def is_data_type_match(graip_db_file, table_name, col_name, data_value):
     conn.close()
     return False
 
+
+def get_drain_id(time_in, date_in, vehicle_id):
+    # remove am/pm
+    if isinstance(time_in, basestring):
+        time = time_in[:-2]
+        time_hour, time_min, time_sec = time.split(":")
+        time_hour = int(time_hour)
+        time_min = int(time_min)
+        time_sec = int(time_sec)
+        if time_sec > 30:
+            time_min += 1
+        if "p" in time_in and time_hour != 12:
+            time_hour += 12
+
+        if "a" in time_in and time_hour == 12:
+            time_hour = 0
+        time_24_format = (time_hour * 100) + time_min
+    else:
+        time_24_format = time_in
+    dt_obj = date_in
+    # get 2 digit year
+    year = int(str(dt_obj.year)[2:])
+    drain_id = (year * 1000000000) + (dt_obj.month * 10000000) + (dt_obj.day * 100000) + \
+               (time_24_format * 10) + vehicle_id
+    return drain_id
+
+
 def get_table_column_data_type(graip_db_file, table_name, col_name):
     conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
     cursor = conn.cursor()
@@ -654,3 +981,11 @@ def get_table_column_data_type(graip_db_file, table_name, col_name):
             return row.data_type
 
     return None
+
+
+def get_items_from_list_box(list_box):
+    item_list = []
+    for i in range(list_box.count()):
+        item = list_box.item(i).text()
+        item_list.append(item)
+    return item_list
