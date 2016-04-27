@@ -226,6 +226,79 @@ class ConsolidateShapeFiles(QDialog):
         conn.close()
 
 
+class AddRoadNetworkDefinitionsDialog(QDialog):
+    rd_network_name = None
+    rd_base_rate = None
+    rd_description = None
+
+    def __init__(self, graip_db_file, parent=None):
+        super(AddRoadNetworkDefinitionsDialog, self).__init__(parent)
+        self.graip_db_file = graip_db_file
+        grid_layout = QGridLayout()
+        self.label_rd_network_name = QLabel("Road Network Name")
+        self.line_edit_rd_network_name = QLineEdit()
+        grid_layout.addWidget(self.label_rd_network_name, 0, 0)
+        grid_layout.addWidget(self.line_edit_rd_network_name, 0, 1)
+
+        self.label_rd_base_rate = QLabel("Base Rate(kg/m/yr)")
+        self.line_edit_rd_base_rate = QLineEdit()
+        grid_layout.addWidget(self.label_rd_base_rate, 1, 0)
+        grid_layout.addWidget(self.line_edit_rd_base_rate, 1, 1)
+
+        self.label_rd_description = QLabel("Description")
+        self.line_edit_rd_description = QLineEdit()
+        grid_layout.addWidget(self.label_rd_description, 2, 0)
+        grid_layout.addWidget(self.line_edit_rd_description, 2, 1)
+
+        # OK and Cancel buttons
+        btn_layout = QHBoxLayout()
+        self.buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            Qt.Horizontal, self)
+
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+
+        btn_layout.addWidget(self.buttons)
+        grid_layout.addLayout(btn_layout, 3, 1)
+
+        self.setWindowTitle("Add Road Network Definition")
+        self.resize(400, 200)
+        self.setLayout(grid_layout)
+        self.setModal(True)
+
+    def accept(self, *args, **kwargs):
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle("Invalid Data")
+
+        if len(self.line_edit_rd_network_name.text().strip()) == 0:
+            msg_box.setText("Network name is missing.")
+            msg_box.exec_()
+            return
+        else:
+            self.rd_network_name = self.line_edit_rd_network_name.text().strip()
+        if len(self.line_edit_rd_base_rate.text().strip()) == 0:
+            msg_box.setText("Base rate is missing.")
+            msg_box.exec_()
+            return
+        else:
+            try:
+                int(self.line_edit_rd_base_rate.text())
+                self.rd_base_rate = self.line_edit_rd_base_rate.text()
+            except ValueError:
+                msg_box.setText("Base rate should be a numerical value.")
+                msg_box.exec_()
+                return
+
+        if len(self.line_edit_rd_description.text().strip()) == 0:
+            msg_box.setText("Network description is missing.")
+            msg_box.exec_()
+            return
+        else:
+            self.rd_description = self.line_edit_rd_description.text().strip()
+
+        super(AddRoadNetworkDefinitionsDialog, self).accept(*args, **kwargs)
+
 class OptionsDialog(QDialog):
     def __init__(self, parent=None):
         super(OptionsDialog, self).__init__(parent)
@@ -444,8 +517,8 @@ class DefineValueDialog(QDialog):
             # set the current index of the combobox
             initial_combobox_index = 0
             field_match_found = False
-            if isinstance(self.missing_field_value, int):
-                print str(self.missing_field_value)
+            # if isinstance(self.missing_field_value, int):
+            #     print str(self.missing_field_value)
             missing_field_value = self.missing_field_value.replace(" ", "")
             if len(missing_field_value) > 2:
                 for index in range(self.cmb_definitions.count()):
@@ -561,6 +634,7 @@ class DefineValueDialog(QDialog):
         self.is_cancel = True
         super(DefineValueDialog, self).reject()
 
+
 class FileDeleteMessageBox(QMessageBox):
     def __init__(self, file_to_delete, parent=None):
         super(FileDeleteMessageBox, self).__init__(parent)
@@ -568,6 +642,7 @@ class FileDeleteMessageBox(QMessageBox):
         self.setInformativeText("Do you want to delete this file?")
         self.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         self.setDefaultButton(QMessageBox.No)
+
 
 class TableModel(QAbstractTableModel):
     """
@@ -731,6 +806,7 @@ class ImportWizardPage(QWizardPage):
             v_rn_layout = QVBoxLayout()
             self.rd_rn_label = QLabel("Road Network")
             self.rd_network_combo_box = QComboBox()
+            self.rd_network_combo_box.setMinimumWidth(150)
             self.rd_network_combo_box.currentIndexChanged.connect(self.update_rd_network_gui_elements)
             v_rn_layout.addWidget(self.rd_rn_label)
             v_rn_layout.addWidget(self.rd_network_combo_box)
@@ -740,6 +816,7 @@ class ImportWizardPage(QWizardPage):
             self.rd_ber_label = QLabel("Base Erosion Rate (kg/m/yr)")
             self.rd_ber_line_edit = QLineEdit()
             self.rd_ber_line_edit.setEnabled(False)
+            self.rd_ber_line_edit.setMaximumWidth(75)
             v_ber_layout.addWidget(self.rd_ber_label)
             v_ber_layout.addWidget(self.rd_ber_line_edit)
             h_rn_layout.addLayout(v_ber_layout)
@@ -752,12 +829,23 @@ class ImportWizardPage(QWizardPage):
             v_des_layout.addWidget(self.rd_des_line_edit)
             h_rn_layout.addLayout(v_des_layout)
 
+            v_add_btn_layout = QVBoxLayout()
+            v_add_btn_layout.addWidget(QLabel("Add"))
             self.add_rn_button = QPushButton()
             self.add_rn_button.setText('+')
-            h_rn_layout.addWidget(self.add_rn_button)
+            self.add_rn_button.clicked.connect(self.show_add_network_dlg)
+            v_add_btn_layout.addWidget(self.add_rn_button)
+            #h_rn_layout.addWidget(self.add_rn_button)
+            h_rn_layout.addLayout(v_add_btn_layout)
+
+            v_del_btn_layout = QVBoxLayout()
+            v_del_btn_layout.addWidget(QLabel("Delete"))
             self.del_rn_button = QPushButton()
             self.del_rn_button.setText('-')
-            h_rn_layout.addWidget(self.del_rn_button)
+            self.del_rn_button.clicked.connect(self.delete_rn_def_record)
+            v_del_btn_layout.addWidget(self.del_rn_button)
+            #h_rn_layout.addWidget(self.del_rn_button)
+            h_rn_layout.addLayout(v_del_btn_layout)
 
             self.v_set_fields_layout.addLayout(h_rn_layout)
 
@@ -785,6 +873,26 @@ class ImportWizardPage(QWizardPage):
         else:
             self.setTitle("Import Road Line Shapefile: {} of {}".format(self.file_index + 1, shp_file_count))
 
+    def show_add_network_dlg(self):
+        graip_db_file = self.wizard.line_edit_mdb_file.text()
+        conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
+        cursor = conn.cursor()
+        dlg = AddRoadNetworkDefinitionsDialog(graip_db_file)
+        dlg.show()
+        dlg.exec_()
+        if dlg.result() == QDialog.Accepted:
+            self.rd_network_combo_box.addItem(dlg.rd_network_name)
+            sql_insert = "INSERT INTO RoadNetworkDefinitions(RoadNetwork, BaseRate, Description) VALUES (?, ?, ?)"
+            data = (dlg.rd_network_name, dlg.rd_base_rate, dlg.rd_description)
+            cursor.execute(sql_insert, data)
+            conn.commit()
+            # find the number of records
+            network_def_row = cursor.execute("SELECT COUNT(*) AS def_count FROM RoadNetworkDefinitions").fetchone()
+            # set the network combobox to the just entered new definition
+            index = network_def_row.def_count - 1
+            self.rd_network_combo_box.setCurrentIndex(index)
+            conn.close()
+
     def update_rd_network_gui_elements(self):
         graip_db_file = self.wizard.line_edit_mdb_file.text()
         conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
@@ -797,6 +905,23 @@ class ImportWizardPage(QWizardPage):
             self.rd_ber_line_edit.setText(str(rd_network_def_row.BaseRate))
             self.rd_des_line_edit.setText(rd_network_def_row.Description)
         conn.close()
+
+    def delete_rn_def_record(self):
+        graip_db_file = self.wizard.line_edit_mdb_file.text()
+        conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
+        cursor = conn.cursor()
+        msg_box = QMessageBox()
+        msg_box.setWindowTitle("Not allowed")
+        msg_box.setText("Network 'Default' can't be deleted")
+        selected_network_name = self.rd_network_combo_box.currentText()
+        if selected_network_name.lower() == 'default':
+            msg_box.exec_()
+        else:
+            cursor.execute("DELETE FROM RoadNetworkDefinitions WHERE RoadNetwork=?", selected_network_name)
+            conn.commit()
+            conn.close()
+            current_index = self.rd_network_combo_box.currentIndex()
+            self.rd_network_combo_box.removeItem(current_index)
 
 
 def delete_shapefile(shp_file_to_delete):
