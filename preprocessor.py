@@ -1,8 +1,7 @@
 import sys
 import os
 import shutil
-from datetime import datetime
-from dateutil import parser
+
 
 import pyodbc
 from osgeo import ogr, gdal, osr
@@ -41,6 +40,8 @@ class Preprocessor(QWizard):
 
         self.currentIdChanged.connect(self.show_options_button)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        graip_icon = QIcon(utils.GRAIP_ICON_FILE)
+        self.setWindowIcon(graip_icon)
         self.resize(800, 600)
 
     def show_options_button(self):
@@ -85,20 +86,21 @@ class FileSetupPage(QWizardPage):
         layout_input_files = QVBoxLayout()
         self.group_box_input_files = QGroupBox("Input Files")
 
+        # Not using the selection of dem file for now
         self.dem_file_label = QLabel()
         self.dem_file_label.setText("DEM File('sta.adf' inside the DEM folder)")
         self.dem_file_label.setWordWrap(True)
-        #self.form_layout.addRow("", self.dem_file_label)
+
         v_layout_dem_file = QVBoxLayout()
-        v_layout_dem_file.addWidget(self.dem_file_label)
+        #v_layout_dem_file.addWidget(self.dem_file_label)
         h_layout_dem_files = QHBoxLayout()
         self.line_edit_dem_file = QLineEdit()
         self.btn_browse_dem_file = QPushButton('....')
         # connect the browse button to the function
         self.btn_browse_dem_file.clicked.connect(self.browse_dem_file)
 
-        h_layout_dem_files.addWidget(self.line_edit_dem_file)
-        h_layout_dem_files.addWidget(self.btn_browse_dem_file)
+        #h_layout_dem_files.addWidget(self.line_edit_dem_file)
+        #h_layout_dem_files.addWidget(self.btn_browse_dem_file)
         v_layout_dem_file.addLayout(h_layout_dem_files)
         layout_input_files.addLayout(v_layout_dem_file)
 
@@ -164,7 +166,7 @@ class FileSetupPage(QWizardPage):
 
     def show_options_dialog(self):
         if len(self.line_edit_mdb_file.text().strip()) == 0:
-            msg_box = QMessageBox()
+            msg_box = utils.GraipMessageBox()
             msg_box.setWindowTitle("GRAIP Database File")
             msg_box.setText("Before you can set options, select GRAIP database file.")
             msg_box.exec_()
@@ -177,8 +179,8 @@ class FileSetupPage(QWizardPage):
         if self.wizard.currentId() == 0:
             if len(self.line_edit_mdb_file.text().strip()) == 0:
                 return False
-            elif len(self.line_edit_dem_file.text().strip()) == 0:
-                return False
+            # elif len(self.line_edit_dem_file.text().strip()) == 0:
+            #     return False
             elif self.lst_widget_road_shp_files.count() == 0:
                 return False
             elif self.lst_widget_dp_shp_files.count() == 0:
@@ -196,7 +198,8 @@ class FileSetupPage(QWizardPage):
             if page_id > 0:
                 self.wizard.removePage(page_id)
 
-        msg_box = QMessageBox()
+        msg_box = utils.GraipMessageBox()
+        msg_box.setWindowTitle("Input errors")
         msg_box.setIcon(QMessageBox.Critical)
 
         if len(self.line_edit_mdb_file.text().strip()) == 0:
@@ -204,10 +207,10 @@ class FileSetupPage(QWizardPage):
             msg_box.exec_()
             return False
 
-        if len(self.line_edit_dem_file.text().strip()) == 0:
-            msg_box.setText("DEM file is required")
-            msg_box.exec_()
-            return False
+        # if len(self.line_edit_dem_file.text().strip()) == 0:
+        #     msg_box.setText("DEM file is required")
+        #     msg_box.exec_()
+        #     return False
 
         if self.lst_widget_road_shp_files.count() == 0:
             msg_box.setText("At least one road shapefile is required")
@@ -256,6 +259,7 @@ class FileSetupPage(QWizardPage):
         # insert data to FileSetup table
         db_file = self.line_edit_mdb_file.text()
         dem_file_path = self.line_edit_dem_file.text()
+        dem_file_path = "path will be set in future version"
         dp_shp_files = ','.join(dp_shp_file_list)
         rd_shp_files = ','.join(rd_shp_file_list)
         cursor.execute("INSERT INTO FileSetup(GRAIP_DB_File, DEM_Path, Road_Shapefiles, DrainPoints_Shapefiles) "
@@ -375,7 +379,8 @@ class FileSetupPage(QWizardPage):
             shutil.copyfile(empty_graip_db_file, graip_db_file)
         else:
             # prompt the user if the existing db file to be overwritten
-            msg_box = QMessageBox()
+            msg_box = utils.GraipMessageBox()
+            msg_box.setWindowTitle("File action")
             msg = "File {} exits. Do you want to overwrite it?".format(graip_db_file)
             msg_box.setText(msg)
             msg_box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
@@ -413,6 +418,7 @@ class DrainPointPage(utils.ImportWizardPage):
 
     def initializePage(self, *args, **kwargs):
         self.progress_bar.setValue(0)
+        #self.progress_bar.update(0)
         graip_db_file = self.wizard.line_edit_mdb_file.text()
         conn = pyodbc.connect(utils.MS_ACCESS_CONNECTION % graip_db_file)
         cursor = conn.cursor()
@@ -548,9 +554,6 @@ class DrainPointPage(utils.ImportWizardPage):
             track_field_mismatch = []
             # for each drain point in shapefile
             for dp in layer:
-                #if progress_bar_counter % 10 == 0:
-                # update_pct = int(progress_bar_max/progress_bar_counter)
-                # self.progress_bar.setValue(update_pct)
                 # Fill StreamConnectID field for stream crossing or sump
                 if drain_type_def_row.TableName == "StrXingAtt":
                     stream_connect_id = 2
@@ -644,7 +647,7 @@ class DrainPointPage(utils.ImportWizardPage):
                                         msg = log_message + "{}.".format(action_taken_msg)
 
                                         if not self.wizard.is_uninterrupted:
-                                            msg_box = QMessageBox()
+                                            msg_box = utils.GraipMessageBox()
                                             msg_box.setIcon(QMessageBox.Information)
                                             msg_box.setText(msg)
                                             msg_box.setWindowTitle("Mismatch")
@@ -797,10 +800,12 @@ class DrainPointPage(utils.ImportWizardPage):
                 # update progress bar
                 progress_bar_counter += 1
                 self.progress_bar.setValue(progress_bar_counter)
+                qApp.processEvents()
             conn.close()
         except Exception as ex:
             # TODO: write the error to the log file
-            msg_box = QMessageBox()
+            msg_box = utils.GraipMessageBox()
+            msg_box.setWindowTitle("Error")
             msg_box.setIcon(QMessageBox.Critical)
             msg_box.setText(ex.message)
             msg_box.exec_()
@@ -821,7 +826,9 @@ class DrainPointPage(utils.ImportWizardPage):
         if self.wizard.wizard.currentId() > 0:
             prev_page_id = self.wizard.wizard.currentId() - 1
             prev_page = self.wizard.wizard.page(prev_page_id)
-            prev_page.progress_bar.setValue(0)
+
+            if not isinstance(prev_page, FileSetupPage):
+                prev_page.progress_bar.setValue(0)
 
 class RoadLinePage(utils.ImportWizardPage):
 
@@ -995,7 +1002,7 @@ class RoadLinePage(utils.ImportWizardPage):
                                         msg = log_message + "{}.".format(action_taken_msg)
 
                                         if not self.wizard.is_uninterrupted:
-                                            msg_box = QMessageBox()
+                                            msg_box = utils.GraipMessageBox()
                                             msg_box.setIcon(QMessageBox.Information)
                                             msg_box.setText(msg)
                                             msg_box.setWindowTitle("Mismatch")
@@ -1165,6 +1172,7 @@ class RoadLinePage(utils.ImportWizardPage):
                 # update progress bar
                 progress_bar_counter += 1
                 self.progress_bar.setValue(progress_bar_counter)
+                qApp.processEvents()
             conn.close()
             # show consolidate shapefiles dialog
             dp_shp_files = utils.get_items_from_list_box(self.wizard.lst_widget_dp_shp_files)
@@ -1174,7 +1182,7 @@ class RoadLinePage(utils.ImportWizardPage):
                                               dp_log_file=self.wizard.dp_log_file,
                                               rd_log_file=self.wizard.rd_log_file,
                                               working_directory= self.wizard.working_directory,
-                                              parent=None)
+                                              parent=self)
             self.wizard.hide()
             dlg.show()
             dlg.do_process()
@@ -1182,7 +1190,8 @@ class RoadLinePage(utils.ImportWizardPage):
 
         except Exception as ex:
             # TODO: write the error to the log file
-            msg_box = QMessageBox()
+            msg_box = utils.GraipMessageBox()
+            msg_box.setWindowTitle("Error")
             msg_box.setIcon(QMessageBox.Critical)
             msg_box.setText(ex.message)
             msg_box.exec_()

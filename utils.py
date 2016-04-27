@@ -23,6 +23,13 @@ class GDALFileDriver(object):
 
 DP_ERROR_LOG_TABLE_NAME = 'DPErrorLog'
 RD_ERROR_LOG_TABLE_NAME = 'RDErrorLog'
+GRAIP_ICON_FILE = "GRAIPIcon.ico"
+
+
+class GraipMessageBox(QMessageBox):
+    def __init__(self, *args):
+        QMessageBox.__init__(self, *args)
+        self.setWindowIcon(QIcon(GRAIP_ICON_FILE))
 
 class FileDialog(QFileDialog):
     """
@@ -81,8 +88,10 @@ class ConsolidateShapeFiles(QDialog):
         v_layout.addWidget(self.btn_close)
         self.setLayout(v_layout)
         self.setWindowTitle("Consolidating")
+        self.setWindowIcon(QIcon(GRAIP_ICON_FILE))
         self.setFixedSize(600, 100)
         self.setModal(True)
+        self.setFocus()
 
     def do_process(self):
         self.check_for_orphan_drain_points()
@@ -120,6 +129,7 @@ class ConsolidateShapeFiles(QDialog):
             # update progressbar
             progress_value = i + 1
             self.progress_bar.setValue(progress_value)
+            QApplication.processEvents()
 
         rd_rows = cursor.execute("SELECT * FROM RoadLines").fetchall()
         rd_record_count = len(rd_rows)
@@ -172,6 +182,8 @@ class ConsolidateShapeFiles(QDialog):
             feature.Destroy()
 
             self.progress_bar.setValue(dp_row.GRAIPDID + 1)
+            QApplication.processEvents()
+            time.sleep(0.01)
 
         # NOTE: This how the old graip used to do
         # gripdid = 0
@@ -221,7 +233,8 @@ class ConsolidateShapeFiles(QDialog):
             # Destroy the feature to free resources
             feature.Destroy()
             self.progress_bar.setValue(rd_row.GRAIPRID + 1)
-
+            QApplication.processEvents()
+            time.sleep(0.01)
         data_source.Destroy()
         conn.close()
 
@@ -265,10 +278,11 @@ class AddRoadNetworkDefinitionsDialog(QDialog):
         self.setWindowTitle("Add Road Network Definition")
         self.resize(400, 200)
         self.setLayout(grid_layout)
+        self.setWindowIcon(QIcon(GRAIP_ICON_FILE))
         self.setModal(True)
 
     def accept(self, *args, **kwargs):
-        msg_box = QMessageBox()
+        msg_box = GraipMessageBox()
         msg_box.setWindowTitle("Invalid Data")
 
         if len(self.line_edit_rd_network_name.text().strip()) == 0:
@@ -276,7 +290,18 @@ class AddRoadNetworkDefinitionsDialog(QDialog):
             msg_box.exec_()
             return
         else:
-            self.rd_network_name = self.line_edit_rd_network_name.text().strip()
+            # check that the network name not already exists
+            conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
+            cursor = conn.cursor()
+            network_name = self.line_edit_rd_network_name.text().strip()
+            sql_select = "SELECT * FROM RoadNetworkDefinitions WHERE RoadNetwork=?"
+            network_def_row = cursor.execute(sql_select, network_name).fetchone()
+            conn.close()
+            if network_def_row is not None:
+                msg_box.setText("Network name already exists.")
+                msg_box.exec_()
+                return
+            self.rd_network_name = network_name
         if len(self.line_edit_rd_base_rate.text().strip()) == 0:
             msg_box.setText("Base rate is missing.")
             msg_box.exec_()
@@ -298,6 +323,7 @@ class AddRoadNetworkDefinitionsDialog(QDialog):
             self.rd_description = self.line_edit_rd_description.text().strip()
 
         super(AddRoadNetworkDefinitionsDialog, self).accept(*args, **kwargs)
+
 
 class OptionsDialog(QDialog):
     def __init__(self, parent=None):
@@ -362,6 +388,7 @@ class OptionsDialog(QDialog):
         self.form_layout.addRow(btn_layout)
 
         self.setWindowTitle("Options")
+        self.setWindowIcon(QIcon(GRAIP_ICON_FILE))
         self.resize(600, 250)
         self.setLayout(self.form_layout)
         self.setModal(True)
@@ -499,6 +526,7 @@ class DefineValueDialog(QDialog):
         self._initial_setup()
 
         self.setWindowTitle("Define Value")
+        self.setWindowIcon(QIcon(GRAIP_ICON_FILE))
         self.resize(600, 300)
         self.setLayout(self.form_layout)
         self.setModal(True)
@@ -635,9 +663,10 @@ class DefineValueDialog(QDialog):
         super(DefineValueDialog, self).reject()
 
 
-class FileDeleteMessageBox(QMessageBox):
+class FileDeleteMessageBox(GraipMessageBox):
     def __init__(self, file_to_delete, parent=None):
         super(FileDeleteMessageBox, self).__init__(parent)
+        self.setWindowTitle("File action")
         self.setText("{} file exists.".format(file_to_delete))
         self.setInformativeText("Do you want to delete this file?")
         self.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
@@ -835,7 +864,6 @@ class ImportWizardPage(QWizardPage):
             self.add_rn_button.setText('+')
             self.add_rn_button.clicked.connect(self.show_add_network_dlg)
             v_add_btn_layout.addWidget(self.add_rn_button)
-            #h_rn_layout.addWidget(self.add_rn_button)
             h_rn_layout.addLayout(v_add_btn_layout)
 
             v_del_btn_layout = QVBoxLayout()
@@ -844,7 +872,6 @@ class ImportWizardPage(QWizardPage):
             self.del_rn_button.setText('-')
             self.del_rn_button.clicked.connect(self.delete_rn_def_record)
             v_del_btn_layout.addWidget(self.del_rn_button)
-            #h_rn_layout.addWidget(self.del_rn_button)
             h_rn_layout.addLayout(v_del_btn_layout)
 
             self.v_set_fields_layout.addLayout(h_rn_layout)
@@ -910,7 +937,7 @@ class ImportWizardPage(QWizardPage):
         graip_db_file = self.wizard.line_edit_mdb_file.text()
         conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
         cursor = conn.cursor()
-        msg_box = QMessageBox()
+        msg_box = GraipMessageBox()
         msg_box.setWindowTitle("Not allowed")
         msg_box.setText("Network 'Default' can't be deleted")
         selected_network_name = self.rd_network_combo_box.currentText()
