@@ -48,9 +48,9 @@ Source: "D:\SoftwareProjects\GRAIP-2_Preprocessor\setup_files\*"; DestDir: "{app
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
-Name: "{commonprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-IconFilename:  "{app}\GRAIPIcon.ico"
+Name: "{commonprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename:  "{app}\GRAIPIcon.ico"
+Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename:  "{app}\GRAIPIcon.ico"
+
                            
 [Run]
 Filename: "{app}\setup_files\install_pyside.bat"; Flags: waituntilterminated
