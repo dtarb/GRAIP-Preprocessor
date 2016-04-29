@@ -157,6 +157,7 @@ class ConsolidateShapeFiles(QDialog):
         cursor = conn.cursor()
         dp_rows = cursor.execute("SELECT GRAIPDID FROM DrainPoints ORDER BY GRAIPDID").fetchall()
         dp_record_count = len(dp_rows)
+        conn.close()
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(dp_record_count)
         # set up the shapefile driver
@@ -164,45 +165,51 @@ class ConsolidateShapeFiles(QDialog):
 
         # create the data source
         dp_consolidated_shp_file = os.path.join(self.working_directory, "DrainPoints.shp")
-        data_source = driver.CreateDataSource(dp_consolidated_shp_file)
-        # create the layer
+        dp_data_source = driver.CreateDataSource(dp_consolidated_shp_file)
+        # create the layer of the shapefile
         srs = osr.SpatialReference()
-        layer = data_source.CreateLayer("DrainPoints", srs, ogr.wkbPoint)
+        dp_layer = dp_data_source.CreateLayer("DrainPoints", srs, ogr.wkbPoint)
         # Add the field GRAIPDID
         field_name = ogr.FieldDefn("GRAIPDID", ogr.OFTInteger)
-        layer.CreateField(field_name)
+        dp_layer.CreateField(field_name)
 
-        for dp_row in dp_rows:
-            feature = ogr.Feature(layer.GetLayerDefn())
-            # Set the attributes using the values from the delimited text file
-            feature.SetField("GRAIPDID", dp_row.GRAIPDID)
-            # Create the feature in the layer (shapefile)
-            layer.CreateFeature(feature)
-            # Destroy the feature to free resources
-            feature.Destroy()
-
-            self.progress_bar.setValue(dp_row.GRAIPDID + 1)
-            QApplication.processEvents()
-            time.sleep(0.01)
+        # for dp_row in dp_rows:
+        #     feature = ogr.Feature(dp_layer.GetLayerDefn())
+        #     # Set the attributes using the values from the delimited text file
+        #     feature.SetField("GRAIPDID", dp_row.GRAIPDID)
+        #     # Create the feature in the layer (shapefile)
+        #     dp_layer.CreateFeature(feature)
+        #     # Destroy the feature to free resources
+        #     feature.Destroy()
+        #
+        #     self.progress_bar.setValue(dp_row.GRAIPDID + 1)
+        #     QApplication.processEvents()
+        #     time.sleep(0.01)
 
         # NOTE: This how the old graip used to do
-        # gripdid = 0
-        # for shp_file in self.dp_shp_files:
-        #     gdal_driver = ogr.GetDriverByName(GDALFileDriver.ShapeFile())
-        #     data_source = gdal_driver.Open(shp_file, GA_ReadOnly)
-        #     layer = data_source.GetLayer(0)
-        #     for i in range(len(layer)):
-        #         feature = ogr.Feature(layer.GetLayerDefn())
-        #         # Set the attributes using the values from the delimited text file
-        #         gripdid += 1
-        #         feature.SetField("GRAIPDID", gripdid)
-        #         # Create the feature in the layer (shapefile)
-        #         layer.CreateFeature(feature)
-        #         # Destroy the feature to free resources
-        #         feature.Destroy()
+        graipdid = 0
+        gdal_driver = ogr.GetDriverByName(GDALFileDriver.ShapeFile())
+        for shp_file in self.dp_shp_files:
+            data_source = gdal_driver.Open(shp_file, GA_ReadOnly)
+            layer = data_source.GetLayer(0)
+            for feature in layer:
+                dp_feature = ogr.Feature(dp_layer.GetLayerDefn())
+                geom = feature.GetGeometryRef()
+                # Set the feature geometry
+                dp_feature.SetGeometry(geom)
+                # Set the attributes using the values from the delimited text file
+                dp_feature.SetField("GRAIPDID", graipdid)
+                # Create the feature in the layer (shapefile)
+                dp_layer.CreateFeature(dp_feature)
+                # Destroy the feature to free resources
+                dp_feature.Destroy()
+                graipdid += 1
+                self.progress_bar.setValue(graipdid)
+                QApplication.processEvents()
+                time.sleep(0.01)
+            data_source.Destroy()
 
-        data_source.Destroy()
-        conn.close()
+        dp_data_source.Destroy()
 
     def consolidate_rd_shp_files(self):
         self.message.setText("Consolidating multiple road lines shapefiles...")
@@ -210,6 +217,7 @@ class ConsolidateShapeFiles(QDialog):
         cursor = conn.cursor()
         rd_rows = cursor.execute("SELECT GRAIPRID FROM RoadLines ORDER BY GRAIPRID").fetchall()
         rd_record_count = len(rd_rows)
+        conn.close()
         self.progress_bar.setValue(0)
         self.progress_bar.setMaximum(rd_record_count)
         # set up the shapefile driver
@@ -217,26 +225,50 @@ class ConsolidateShapeFiles(QDialog):
 
         # create the data source
         rd_consolidated_shp_file = os.path.join(self.working_directory, "RoadLines.shp")
-        data_source = driver.CreateDataSource(rd_consolidated_shp_file)
+        rd_data_source = driver.CreateDataSource(rd_consolidated_shp_file)
         # create the layer
         srs = osr.SpatialReference()
-        layer = data_source.CreateLayer("RoadLines", srs, ogr.wkbLineString)
+        rd_layer = rd_data_source.CreateLayer("RoadLines", srs, ogr.wkbLineString)
         # Add the field GRAIPRID
         field_name = ogr.FieldDefn("GRAIPRID", ogr.OFTInteger)
-        layer.CreateField(field_name)
-        for rd_row in rd_rows:
-            feature = ogr.Feature(layer.GetLayerDefn())
-            # Set the attributes using the values from the delimited text file
-            feature.SetField("GRAIPRID", rd_row.GRAIPRID)
-            # Create the feature in the layer (shapefile)
-            layer.CreateFeature(feature)
-            # Destroy the feature to free resources
-            feature.Destroy()
-            self.progress_bar.setValue(rd_row.GRAIPRID + 1)
-            QApplication.processEvents()
-            time.sleep(0.01)
-        data_source.Destroy()
-        conn.close()
+        rd_layer.CreateField(field_name)
+
+        # for rd_row in rd_rows:
+        #     feature = ogr.Feature(layer.GetLayerDefn())
+        #     # Set the attributes using the values from the delimited text file
+        #     feature.SetField("GRAIPRID", rd_row.GRAIPRID)
+        #     # Create the feature in the layer (shapefile)
+        #     layer.CreateFeature(feature)
+        #     # Destroy the feature to free resources
+        #     feature.Destroy()
+        #     self.progress_bar.setValue(rd_row.GRAIPRID + 1)
+        #     QApplication.processEvents()
+        #     time.sleep(0.01)
+        # data_source.Destroy()
+
+        graiprid = 0
+        gdal_driver = ogr.GetDriverByName(GDALFileDriver.ShapeFile())
+        for shp_file in self.rd_shp_files:
+            data_source = gdal_driver.Open(shp_file, GA_ReadOnly)
+            layer = data_source.GetLayer(0)
+            for feature in layer:
+                rd_feature = ogr.Feature(rd_layer.GetLayerDefn())
+                geom = feature.GetGeometryRef()
+                # Set the feature geometry
+                rd_feature.SetGeometry(geom)
+                # Set the attributes using the values from the delimited text file
+                rd_feature.SetField("GRAIPRID", graiprid)
+                # Create the feature in the layer (shapefile)
+                rd_layer.CreateFeature(rd_feature)
+                # Destroy the feature to free resources
+                rd_feature.Destroy()
+                graiprid += 1
+                self.progress_bar.setValue(graiprid)
+                QApplication.processEvents()
+                time.sleep(0.01)
+            data_source.Destroy()
+
+        rd_data_source.Destroy()
 
 
 class AddRoadNetworkDefinitionsDialog(QDialog):
