@@ -2,10 +2,8 @@ import sys
 import os
 import shutil
 
-
 import pyodbc
-from osgeo import ogr, gdal, osr
-from gdalconst import *
+from osgeo import ogr
 
 from PySide.QtGui import *
 from PySide.QtCore import *
@@ -28,7 +26,7 @@ class Preprocessor(QWizard):
         self.is_uninterrupted = False
         self.options_dlg = utils.OptionsDialog()
 
-        self.setWindowTitle("GRAIP Preprocessor (Version 2.0)")
+        self.setWindowTitle("GRAIP Preprocessor (Version 1.0)")
         # add a custom button
         self.btn_options = QPushButton('Options')
         self.setButton(self.CustomButton1, self.btn_options)
@@ -52,7 +50,6 @@ class Preprocessor(QWizard):
     def run(self):
         # Show the form
         self.show()
-
         # Run the qt application
         qt_app.exec_()
 
@@ -110,7 +107,7 @@ class FileSetupPage(QWizardPage):
         self.rd_shp_file_label.setWordWrap(True)
         v_layout_rd_shp_files.addWidget(self.rd_shp_file_label)
 
-        self.lst_widget_road_shp_files = QListWidget()
+        self.lst_widget_rd_shp_files = QListWidget()
         # To add an item to the above listWidget,
         # ref: http://srinikom.github.io/pyside-docs/PySide/QtGui/QListWidget.html
         v_layout_rd_shp_buttons = QVBoxLayout()
@@ -122,7 +119,7 @@ class FileSetupPage(QWizardPage):
         v_layout_rd_shp_buttons.addWidget(self.btn_add_rd_shp_file)
         v_layout_rd_shp_buttons.addWidget(self.btn_remove_rd_shp_file)
         h_layout_rd_shp_files = QHBoxLayout()
-        h_layout_rd_shp_files.addWidget(self.lst_widget_road_shp_files)
+        h_layout_rd_shp_files.addWidget(self.lst_widget_rd_shp_files)
         h_layout_rd_shp_files.addLayout(v_layout_rd_shp_buttons)
         v_layout_rd_shp_files.addLayout(h_layout_rd_shp_files)
         layout_input_files.addLayout(v_layout_rd_shp_files)
@@ -175,20 +172,30 @@ class FileSetupPage(QWizardPage):
                 self.dp_log_file, self.rd_log_file, self.is_uninterrupted)
 
     def isComplete(self, *args, **kwargs):
+        # NOTE: in this function DO NOT display any error message box
+
+        self.lst_widget_dp_shp_files.setStyleSheet("background-color:white;")
 
         if self.wizard.currentId() == 0:
             if len(self.line_edit_mdb_file.text().strip()) == 0:
                 return False
+
             # elif len(self.line_edit_dem_file.text().strip()) == 0:
             #     return False
-            elif self.lst_widget_road_shp_files.count() == 0:
+            elif self.lst_widget_rd_shp_files.count() == 0:
                 return False
             elif self.lst_widget_dp_shp_files.count() == 0:
                 return False
             else:
-                return True
+                # check that not same file have been selected for both as DrainPoints as well as RoadLines
+                dp_files = utils.get_items_from_list_box(self.lst_widget_dp_shp_files)
+                rd_files = utils.get_items_from_list_box(self.lst_widget_rd_shp_files)
+                common_shp_files = [shp_file for shp_file in rd_files if shp_file in dp_files]
+                if common_shp_files:
+                    self.lst_widget_dp_shp_files.setStyleSheet("background-color:red;")
+                    return False
 
-        return False
+        return True
 
     def validatePage(self, *args, **kwargs):
         # This function gets called when the next button is clicked for the FileSetup page
@@ -212,7 +219,7 @@ class FileSetupPage(QWizardPage):
         #     msg_box.exec_()
         #     return False
 
-        if self.lst_widget_road_shp_files.count() == 0:
+        if self.lst_widget_rd_shp_files.count() == 0:
             msg_box.setText("At least one road shapefile is required")
             msg_box.exec_()
             return False
@@ -221,6 +228,17 @@ class FileSetupPage(QWizardPage):
             msg_box.setText("At least one drain points shapefile is required")
             msg_box.exec_()
             return False
+
+        # check that not same file have been selected for both as DrainPoints as well as RoadLines
+        # dp_files = utils.get_items_from_list_box(self.lst_widget_dp_shp_files)
+        # rd_files = utils.get_items_from_list_box(self.lst_widget_rd_shp_files)
+        # common_shp_files = [shp_file for shp_file in rd_files if shp_file in dp_files]
+        # if common_shp_files:
+        #     msg_box.setText("One or more file selected for RodLines also have been selected for DrainPoints")
+        #     msg_box.exec_()
+        #     self.wizard.setStartId(0)
+        #     self.wizard.restart()
+        #     return False
 
         dp_shp_file_list = []
         shp_file_count = self.lst_widget_dp_shp_files.count()
@@ -231,9 +249,9 @@ class FileSetupPage(QWizardPage):
                                                shp_file_count=shp_file_count, parent=self))
 
         rd_shp_file_list = []
-        shp_file_count = self.lst_widget_road_shp_files.count()
-        for i in range(self.lst_widget_road_shp_files.count()):
-            shp_file = self.lst_widget_road_shp_files.item(i).text()
+        shp_file_count = self.lst_widget_rd_shp_files.count()
+        for i in range(self.lst_widget_rd_shp_files.count()):
+            shp_file = self.lst_widget_rd_shp_files.item(i).text()
             rd_shp_file_list.append(shp_file)
             self.wizard.addPage(RoadLinePage(shp_type='RD', shp_file_index=i, shp_file=shp_file,
                                              shp_file_count=shp_file_count, parent=self))
@@ -244,7 +262,7 @@ class FileSetupPage(QWizardPage):
             self.wizard.restart()
             total_wizard_pages = len(self.wizard.pageIds())
             # 1 is for the FileSetup page
-            if total_wizard_pages > (self.lst_widget_dp_shp_files.count() + self.lst_widget_road_shp_files.count() + 1):
+            if total_wizard_pages > (self.lst_widget_dp_shp_files.count() + self.lst_widget_rd_shp_files.count() + 1):
                 # here we are removing the DrainPoint page we added in the init of the wizard
                 self.wizard.removePage(1)
 
@@ -294,28 +312,6 @@ class FileSetupPage(QWizardPage):
         self.wizard.btn_options.hide()
         return True
 
-    # TODO: This method is no more used - so delete it
-    def browse_project_file(self):
-        graip_prj_file, _ = QFileDialog.getSaveFileName(None, 'Enter GRAIP Project Filename', os.getcwd(),
-                                                        filter="GRAIP (*.graip)")
-        # check if the cancel was clicked on the file dialog
-        if len(graip_prj_file) == 0:
-            return
-        # change the directory separator to windows
-        graip_prj_file = os.path.abspath(graip_prj_file)
-
-        self.line_edit_prj_file.setText(graip_prj_file)
-        self.working_directory = os.path.abspath(QFileInfo(graip_prj_file).path())
-
-        # set the path of the GRAIP database file if it is not already set
-        if len(self.line_edit_mdb_file.text()) == 0:
-            # get the file name of the project
-            graip_prj_file_name = QFileInfo(self.line_edit_prj_file.text()).fileName()
-            name, ext = graip_prj_file_name.split(".")
-            db_file_name = name + ".mdb"
-            db_file = os.path.join(self.working_directory, db_file_name)
-            self.line_edit_mdb_file.setText(db_file)
-
     def browse_dem_file(self):
         working_dir = self.working_directory if self.working_directory is not None else os.getcwd()
         graip_dem_file, _ = QFileDialog.getOpenFileName(None, "Select file 'sta.adf'", working_dir,
@@ -333,12 +329,17 @@ class FileSetupPage(QWizardPage):
                                                        filter="Shapefiles (*.shp)")
 
         # TODO: If the file already in the list widget do not add that
-        self.lst_widget_road_shp_files.addItems(rd_shp_files)
+        existing_rd_files = utils.get_items_from_list_box(self.lst_widget_rd_shp_files)
+        if existing_rd_files:
+            for shp_file in rd_shp_files:
+                if shp_file not in existing_rd_files:
+                    self.lst_widget_rd_shp_files.addItem(shp_file)
+
         self.completeChanged.emit()
 
     def remove_rd_shp_files(self):
-        for shp_file_item_index in self.lst_widget_road_shp_files.selectedIndexes():
-            item = self.lst_widget_road_shp_files.takeItem(shp_file_item_index.row())
+        for shp_file_item_index in self.lst_widget_rd_shp_files.selectedIndexes():
+            item = self.lst_widget_rd_shp_files.takeItem(shp_file_item_index.row())
             item = None
         self.completeChanged.emit()
 
@@ -347,8 +348,12 @@ class FileSetupPage(QWizardPage):
         dp_shp_files, _ = QFileDialog.getOpenFileNames(None, "Select Drain Points Shapefiles", working_dir,
                                                        filter="Shapefiles (*.shp)")
 
-        # TODO: If the file already in the list widget do not add that
-        self.lst_widget_dp_shp_files.addItems(dp_shp_files)
+        # If the file already in the list widget do not add that
+        existing_dp_files = utils.get_items_from_list_box(self.lst_widget_dp_shp_files)
+        if existing_dp_files:
+            for shp_file in dp_shp_files:
+                if shp_file not in existing_dp_files:
+                    self.lst_widget_dp_shp_files.addItem(shp_file)
         self.completeChanged.emit()
 
     def remove_dp_shp_files(self):
@@ -402,7 +407,7 @@ class FileSetupPage(QWizardPage):
                 if file_setup_row:
                     self.line_edit_dem_file.setText(file_setup_row.DEM_Path)
                     road_shp_files = file_setup_row.Road_Shapefiles.split(',')
-                    self.lst_widget_road_shp_files.addItems(road_shp_files)
+                    self.lst_widget_rd_shp_files.addItems(road_shp_files)
                     dp_shp_files = file_setup_row.DrainPoints_Shapefiles.split(',')
                     self.lst_widget_dp_shp_files.addItems(dp_shp_files)
 
@@ -418,7 +423,6 @@ class DrainPointPage(utils.ImportWizardPage):
 
     def initializePage(self, *args, **kwargs):
         self.progress_bar.setValue(0)
-        #self.progress_bar.update(0)
         graip_db_file = self.wizard.line_edit_mdb_file.text()
         conn = pyodbc.connect(utils.MS_ACCESS_CONNECTION % graip_db_file)
         cursor = conn.cursor()
@@ -475,17 +479,11 @@ class DrainPointPage(utils.ImportWizardPage):
 
             target_source_combined = zip(target_field_col_data, source_field_col_data)
             table_data = [[item[0], item[1]] for item in target_source_combined]
-            #table_data = [['CDate', 'CDATE'], ['CTime', 'CTIME'], ['VehicleID', 'VEHICLE']]
             cmb_data = shp_file_attribute_names
-            #cmb_data = ['CDATE', 'CTIME', 'STREAM_CON', 'SLOPE_SHP']
             self.field_match_table_wizard = utils.TableWidget(table_data=table_data, table_header=table_headers,
                                                               cmb_data=cmb_data)
 
             self.v_set_fields_layout.addWidget(self.field_match_table_wizard)
-            # drain_point_def_rows = cursor.execute("SELECT DrainTypeName FROM DrainTypeDefinitions").fetchall()
-            # drain_point_types = [row.DrainTypeName for row in drain_point_def_rows]
-            # #drain_point_types = ['Broad base type', 'Diffuse drain', 'Ditch relief', 'Lead off']
-            # self.dp_type_combo_box.addItems(drain_point_types)
             conn.close()
 
     def validatePage(self, *args, **kwargs):
@@ -1176,7 +1174,7 @@ class RoadLinePage(utils.ImportWizardPage):
             conn.close()
             # show consolidate shapefiles dialog
             dp_shp_files = utils.get_items_from_list_box(self.wizard.lst_widget_dp_shp_files)
-            rd_shp_files = utils.get_items_from_list_box(self.wizard.lst_widget_road_shp_files)
+            rd_shp_files = utils.get_items_from_list_box(self.wizard.lst_widget_rd_shp_files)
             dlg = utils.ConsolidateShapeFiles(graip_db_file=graip_db_file, dp_shp_files=dp_shp_files,
                                               rd_shp_files=rd_shp_files,
                                               dp_log_file=self.wizard.dp_log_file,
