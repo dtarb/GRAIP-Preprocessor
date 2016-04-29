@@ -2,14 +2,17 @@ import os
 import time
 
 import pyodbc
-from osgeo import ogr, gdal, osr
+from osgeo import ogr, osr
 from gdalconst import *
-from dateutil.parser import parse as date_parse
+
 from datetime import datetime
 from PySide.QtGui import *
 from PySide.QtCore import *
 
 MS_ACCESS_CONNECTION = "Driver={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=%s;"
+DP_ERROR_LOG_TABLE_NAME = 'DPErrorLog'
+RD_ERROR_LOG_TABLE_NAME = 'RDErrorLog'
+GRAIP_ICON_FILE = "GRAIPIcon.ico"
 
 
 class GDALFileDriver(object):
@@ -21,15 +24,12 @@ class GDALFileDriver(object):
     def TifFile(cls):
         return "GTiff"
 
-DP_ERROR_LOG_TABLE_NAME = 'DPErrorLog'
-RD_ERROR_LOG_TABLE_NAME = 'RDErrorLog'
-GRAIP_ICON_FILE = "GRAIPIcon.ico"
-
 
 class GraipMessageBox(QMessageBox):
     def __init__(self, *args):
         QMessageBox.__init__(self, *args)
         self.setWindowIcon(QIcon(GRAIP_ICON_FILE))
+
 
 class FileDialog(QFileDialog):
     """
@@ -44,11 +44,12 @@ class FileDialog(QFileDialog):
         self.openBtn.clicked.disconnect()
         self.openBtn.clicked.connect(self.openClicked)
         self.tree = self.findChild(QTreeView)
+        self.selectedFiles = []
 
     def openClicked(self):
-        inds = self.tree.selectionModel().selectedIndexes()
+        indexes = self.tree.selectionModel().selectedIndexes()
         files = []
-        for i in inds:
+        for i in indexes:
             if i.column() == 0:
                 #print("i.data():" + str(i.data()))
                 files.append(os.path.join(str(self.directory().absolutePath()),str(i.data())))
@@ -68,10 +69,8 @@ class ConsolidateShapeFiles(QDialog):
         self.dp_log_file = dp_log_file
         self.rd_log_file = rd_log_file
         self.working_directory = working_directory
+
         v_layout = QVBoxLayout()
-        # msg = """Checking for orphan drain points, road segments, and duplicate ids and
-        #       then consolidate multiple drain points shapefiles and road lines shapefiles.
-        #  """
         msg = "Checking for orphan drain points, road segments, and duplicate ids ..."
         self.message = QLabel(msg)
         self.message.wordWrap()
