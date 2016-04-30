@@ -330,11 +330,12 @@ class FileSetupPage(QWizardPage):
 
         # TODO: If the file already in the list widget do not add that
         existing_rd_files = utils.get_items_from_list_box(self.lst_widget_rd_shp_files)
-        if existing_rd_files:
+        if len(existing_rd_files) > 0:
             for shp_file in rd_shp_files:
                 if shp_file not in existing_rd_files:
                     self.lst_widget_rd_shp_files.addItem(shp_file)
-
+        else:
+            self.lst_widget_rd_shp_files.addItems(rd_shp_files)
         self.completeChanged.emit()
 
     def remove_rd_shp_files(self):
@@ -350,10 +351,12 @@ class FileSetupPage(QWizardPage):
 
         # If the file already in the list widget do not add that
         existing_dp_files = utils.get_items_from_list_box(self.lst_widget_dp_shp_files)
-        if existing_dp_files:
+        if len(existing_dp_files) > 0:
             for shp_file in dp_shp_files:
                 if shp_file not in existing_dp_files:
                     self.lst_widget_dp_shp_files.addItem(shp_file)
+        else:
+            self.lst_widget_dp_shp_files.addItems(dp_shp_files)
         self.completeChanged.emit()
 
     def remove_dp_shp_files(self):
@@ -693,10 +696,13 @@ class DrainPointPage(utils.ImportWizardPage):
                                                                                        missing_field_name=field_name,
                                                                                        graip_db_file=graip_db_file,
                                                                                        def_table_name=definition_table_name)
-                                        define_value_dlg.show()
-                                        define_value_dlg.exec_()
-                                        if define_value_dlg.is_cancel:
-                                            raise Exception("Aborting processing of this shapefile")
+                                        if not self.wizard.is_uninterrupted:
+                                            define_value_dlg.show()
+                                            define_value_dlg.exec_()
+                                            if define_value_dlg.is_cancel:
+                                                raise Exception("Aborting processing of this shapefile")
+                                        else:
+                                            define_value_dlg.accept()
 
                                         value_matching_id = define_value_dlg.definition_id
                                         action_taken_msg = define_value_dlg.action_taken_msg
@@ -800,6 +806,8 @@ class DrainPointPage(utils.ImportWizardPage):
                 self.progress_bar.setValue(progress_bar_counter)
                 qApp.processEvents()
             conn.close()
+        except (pyodbc.DatabaseError, pyodbc.DataError) as ex:
+            raise Exception(ex.message)
         except Exception as ex:
             # TODO: write the error to the log file
             msg_box = utils.GraipMessageBox()
@@ -1049,10 +1057,13 @@ class RoadLinePage(utils.ImportWizardPage):
                                                                                        missing_field_name=field_name,
                                                                                        graip_db_file=graip_db_file,
                                                                                        def_table_name=definition_table_name)
-                                        define_value_dlg.show()
-                                        define_value_dlg.exec_()
-                                        if define_value_dlg.is_cancel:
-                                            raise Exception("Aborting processing of this shapefile")
+                                        if not self.wizard.is_uninterrupted:
+                                            define_value_dlg.show()
+                                            define_value_dlg.exec_()
+                                            if define_value_dlg.is_cancel:
+                                                raise Exception("Aborting processing of this shapefile")
+                                        else:
+                                            define_value_dlg.accept()
 
                                         value_matching_id = define_value_dlg.definition_id
                                         action_taken_msg = define_value_dlg.action_taken_msg
@@ -1179,12 +1190,15 @@ class RoadLinePage(utils.ImportWizardPage):
                                               rd_shp_files=rd_shp_files,
                                               dp_log_file=self.wizard.dp_log_file,
                                               rd_log_file=self.wizard.rd_log_file,
-                                              working_directory= self.wizard.working_directory,
+                                              working_directory=self.wizard.working_directory,
                                               parent=self)
             self.wizard.hide()
             dlg.show()
             dlg.do_process()
             dlg.exec_()
+
+        except (pyodbc.DatabaseError, pyodbc.DataError) as ex:
+            raise Exception(ex.message)
 
         except Exception as ex:
             # TODO: write the error to the log file
