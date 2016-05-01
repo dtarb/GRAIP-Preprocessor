@@ -26,7 +26,7 @@ class Preprocessor(QWizard):
         self.is_uninterrupted = False
         self.options_dlg = utils.OptionsDialog()
 
-        self.setWindowTitle("GRAIP Preprocessor (Version 1.0)")
+        self.setWindowTitle("GRAIP Preprocessor (Version 2.0)")
         # add a custom button
         self.btn_options = QPushButton('Options')
         self.setButton(self.CustomButton1, self.btn_options)
