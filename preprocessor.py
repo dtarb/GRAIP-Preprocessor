@@ -26,7 +26,7 @@ class Preprocessor(QWizard):
         self.is_uninterrupted = False
         self.options_dlg = utils.OptionsDialog()
 
-        self.setWindowTitle("GRAIP Preprocessor (Version 1.0)")
+        self.setWindowTitle("GRAIP Preprocessor (Version 2.0)")
         # add a custom button
         self.btn_options = QPushButton('Options')
         self.setButton(self.CustomButton1, self.btn_options)
@@ -368,7 +368,8 @@ class FileSetupPage(QWizardPage):
     def browse_db_file(self):
         working_dir = self.working_directory if self.working_directory is not None else os.getcwd()
         graip_db_file, _ = QFileDialog.getSaveFileName(None, 'Enter GRAIP Database Filename', working_dir,
-                                                       filter="GRAIP (*.mdb)", options=QFileDialog.DontConfirmOverwrite)
+                                                       filter="MS Access (*.mdb)",
+                                                       options=QFileDialog.DontConfirmOverwrite)
         # check if the cancel was clicked on the file dialog
         if len(graip_db_file) == 0:
             return
@@ -475,7 +476,7 @@ class DrainPointPage(utils.ImportWizardPage):
                                     matching_field = shp_att_name
                                     break
 
-                        if matching_field is not None:
+                        if matching_field is not None and matching_field not in source_field_col_data:
                             source_field_col_data.append(matching_field)
                         else:
                             source_field_col_data.append(self.no_match_use_default)
@@ -641,11 +642,11 @@ class DrainPointPage(utils.ImportWizardPage):
                                         track_field_mismatch.append(field_name)
                                         action_taken_msg = "A default value will be used"
                                         log_message = "Type mismatch between field '{target_fld_name}' in database and " \
-                                                      "value '{value}' in field '{source_fld_name}' in shapefile." \
+                                                      "value '{value}' in field '{source_fld_name}' in shapefile " \
                                                       "'{shp_file}'.".format(target_fld_name=field_name, value=dp_att_value,
                                                                              source_fld_name=dp_src_field_name,
                                                                              shp_file=dp_shapefile_basename)
-                                        msg = log_message + "{}.".format(action_taken_msg)
+                                        msg = log_message + " {}.".format(action_taken_msg)
 
                                         if not self.wizard.is_uninterrupted:
                                             msg_box = utils.GraipMessageBox()
@@ -668,7 +669,7 @@ class DrainPointPage(utils.ImportWizardPage):
                                 value_matching_id = None
                                 for table_row in definition_table_rows:
                                     # second column has the definition values
-                                    if table_row[1] == dp_att_value:
+                                    if table_row[1].lower() == dp_att_value.lower():
                                         # first column has the definition ID
                                         value_matching_id = table_row[0]
                                         break
@@ -896,7 +897,7 @@ class RoadLinePage(utils.ImportWizardPage):
                                     match_field = shp_att_name
                                     break
 
-                        if match_field is not None:
+                        if match_field is not None and match_field not in source_field_col_data:
                             source_field_col_data.append(match_field)
                         else:
                             source_field_col_data.append(self.no_match_use_default)
@@ -1029,7 +1030,7 @@ class RoadLinePage(utils.ImportWizardPage):
                                 value_matching_id = None
                                 for table_row in definition_table_rows:
                                     # second column has the definition values
-                                    if table_row[1] == rd_att_value:
+                                    if table_row[1].lower() == rd_att_value.lower():
                                         # first column has the definition ID
                                         value_matching_id = table_row[0]
                                         break
@@ -1081,12 +1082,12 @@ class RoadLinePage(utils.ImportWizardPage):
                                     if field_name in rd_table_field_names:
                                         rd_row_data[field_name] = value_matching_id
                                     else:
-                                        raise Exception("'{}' field name is not in RoadLines table")
+                                        raise Exception("'{}' field name is not in RoadLines table".format(field_name))
                                 else:
                                     if field_name in rd_table_field_names:
                                         rd_row_data[field_name] = value_matching_id
                                     else:
-                                        raise Exception("'{}' field name is not in RoadLines table")
+                                        raise Exception("'{}' field name is not in RoadLines table".format(field_name))
                     else:
                         if rd_target_field_name in ('CDate', 'CTime1', 'CTime2' 'VehicleID'):
                             msg = rd_target_field_name + " can't take default values"

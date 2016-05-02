@@ -482,13 +482,17 @@ class DefineValueDialog(QDialog):
         self.def_default_id = None
         self.form_layout = QFormLayout()
         v_main_layout = QVBoxLayout()
+        radio_button_group = QButtonGroup()
         self.radio_btn_use_default = QRadioButton("Use default value")
-        # set this radio button as checked
-        #self.radio_btn_use_default.toggle()
+        radio_button_group.addButton(self.radio_btn_use_default)
         self.radio_btn_reassign = QRadioButton("Reassign this value to an existing value in definitions table")
+        radio_button_group.addButton(self.radio_btn_reassign)
+
         self.radio_btn_add_new = QRadioButton("Add new entry to definitions table")
-        missing_value_msg = "Value '{}' in field '{}' is not in the definitions " \
-                            "table".format(self.missing_field_value, self.missing_field_name)
+        radio_button_group.addButton(self.radio_btn_add_new)
+
+        missing_value_msg = "Value '{}' in field '{}' is not in the {} definitions " \
+                            "table".format(self.missing_field_value, self.missing_field_name, self.def_table_name)
         self.lbl_missing_value = QLabel(missing_value_msg)
         v_main_layout.addWidget(self.lbl_missing_value)
         h_layout_default = QHBoxLayout()
@@ -501,6 +505,7 @@ class DefineValueDialog(QDialog):
         h_layout_definitions = QHBoxLayout()
         self.label_definitions = QLabel("Definitions")
         self.cmb_definitions = QComboBox()
+        self.cmb_definitions.currentIndexChanged.connect(self.set_radio_button)
         h_layout_definitions.addWidget(self.label_definitions)
         h_layout_definitions.addWidget(self.cmb_definitions)
         v_main_layout.addLayout(h_layout_definitions)
@@ -512,7 +517,7 @@ class DefineValueDialog(QDialog):
         self.line_edit_table_name = QLineEdit()
         self.line_edit_table_name.setText(def_table_name)
         self.line_edit_table_name.setEnabled(False)
-        #self.label_table_name.setText(self.def_table_name)
+
         grid_layout_new_entry.addWidget(self.label_table_name, 0, 0)
         grid_layout_new_entry.addWidget(self.line_edit_table_name, 0, 1)
 
@@ -562,6 +567,10 @@ class DefineValueDialog(QDialog):
         self.setLayout(self.form_layout)
         self.setModal(True)
 
+    def set_radio_button(self):
+        if not self.radio_btn_reassign.isChecked():
+            self.radio_btn_reassign.toggle()
+
     def _initial_setup(self):
         try:
             conn = pyodbc.connect(MS_ACCESS_CONNECTION % self.graip_db_file)
@@ -605,7 +614,7 @@ class DefineValueDialog(QDialog):
                 self.radio_btn_reassign.toggle()
 
             # see default value exists in definitions table
-            sql_select = "SELECT * FROM {} WHERE Description LIKE '*Default*'".format(self.def_table_name)
+            sql_select = "SELECT * FROM {} WHERE Description LIKE '%Default%'".format(self.def_table_name)
             def_row = cursor.execute(sql_select).fetchone()
             if def_row:
                 self.line_edit_default.setText(def_row[1])
