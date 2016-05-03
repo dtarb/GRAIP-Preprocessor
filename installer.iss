@@ -2,10 +2,10 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "GRAIP-2 Preprocessor"
-#define MyAppVersion "1.0"
+#define MyAppVersion "2.0"
 #define MyAppPublisher "Utah State University"
 #define MyAppURL "https://github.com/dtarb/GRAIP-Preprocessor"
-#define MyAppExeName "preprocessor.bat"
+#define MyAppExeName "preprocessor.pyw"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
@@ -38,8 +38,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "D:\SoftwareProjects\GRAIP-2_Preprocessor\preprocessor.bat"; DestDir: "{app}\Preprocessor"; Flags: ignoreversion
-Source: "D:\SoftwareProjects\GRAIP-2_Preprocessor\preprocessor.py"; DestDir: "{app}\Preprocessor"; Flags: ignoreversion
+;Source: "D:\SoftwareProjects\GRAIP-2_Preprocessor\preprocessor.bat"; DestDir: "{app}\Preprocessor"; Flags: ignoreversion
+Source: "D:\SoftwareProjects\GRAIP-2_Preprocessor\preprocessor.pyw"; DestDir: "{app}\Preprocessor"; Flags: ignoreversion
 Source: "D:\SoftwareProjects\GRAIP-2_Preprocessor\utils.py"; DestDir: "{app}\Preprocessor"; Flags: ignoreversion
 Source: "D:\SoftwareProjects\GRAIP-2_Preprocessor\GRAIPIcon.ico"; DestDir: "{app}\Preprocessor"; Flags: ignoreversion
 Source: "D:\SoftwareProjects\GRAIP-2_Preprocessor\tutorial\*"; DestDir: "{app}\Preprocessor\tutorial"; Flags: ignoreversion recursesubdirs createallsubdirs
