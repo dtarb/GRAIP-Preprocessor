@@ -868,6 +868,7 @@ class ImportWizardPage(QWizardPage):
         if shp_type == "DP":
             self.dp_label = QLabel("Drain Point Type")
             self.dp_type_combo_box = QComboBox()
+            self.dp_type_combo_box.currentIndexChanged.connect(self.populate_matching_fields_table)
             self.v_set_fields_layout.addWidget(self.dp_label)
             self.v_set_fields_layout.addWidget(self.dp_type_combo_box)
         else:
@@ -939,6 +940,73 @@ class ImportWizardPage(QWizardPage):
             self.setTitle("Import Drain Point Shapefile: {} of {}".format(self.file_index + 1, shp_file_count))
         else:
             self.setTitle("Import Road Line Shapefile: {} of {}".format(self.file_index + 1, shp_file_count))
+
+    def populate_matching_fields_table(self):
+        table_headers = ['Target Field', 'Matching Source Field']
+        self.no_match_use_default = '<No Match Use Default>'
+        graip_db_file = self.wizard.line_edit_mdb_file.text()
+        conn = pyodbc.connect(MS_ACCESS_CONNECTION % graip_db_file)
+        cursor = conn.cursor()
+        dp_shapefile = self.line_edit_imported_file.text()
+        shp_file_attribute_names = get_shapefile_attribute_column_names(dp_shapefile)
+        shp_file_attribute_names = [self.no_match_use_default] + shp_file_attribute_names
+        drain_type_name = self.dp_type_combo_box.currentText()
+        drain_type_name = self.dp_type_combo_box.itemText(self.dp_type_combo_box.currentIndex())
+        drain_type_def_row = cursor.execute("SELECT DrainTypeID FROM DrainTypeDefinitions "
+                                            "WHERE DrainTypeName = ?", drain_type_name).fetchone()
+
+        # find the target field names in the database corresponding to the shapefile being imported
+        field_name_rows = cursor.execute("SELECT DBField FROM FieldMatches "
+                                         "WHERE AttTableID = ?", drain_type_def_row.DrainTypeID).fetchall()
+        target_field_col_data = [row.DBField for row in field_name_rows]
+
+        source_field_col_data = []
+        for target_fld in target_field_col_data:
+            source_field_row = cursor.execute("SELECT DBFField FROM FieldMatches "
+                                              "WHERE DBField = ?", target_fld).fetchone()
+            if source_field_row:
+                # check if the DBFField value matches (if at least first 3 chars need to match)
+                # with any of the values in the combobox used for the 2nd column of the table
+                found_match = False
+                for shp_att_name in shp_file_attribute_names:
+                    if shp_att_name.lower() == source_field_row.DBFField.lower():
+                        if source_field_row.DBFField not in source_field_col_data:
+                            source_field_col_data.append(source_field_row.DBFField)
+                        else:
+                            source_field_col_data.append(self.no_match_use_default)
+                        found_match = True
+                        break
+
+                if not found_match:
+                    matching_field = None
+                    for shp_att_name in shp_file_attribute_names:
+                        if len(shp_att_name) > 2 and len(source_field_row.DBFField) > 2:
+                            # match first 3 characters
+                            match_count = 0
+                            for i in range(len(shp_att_name)):
+                                if shp_att_name[0:i+1].lower() == source_field_row.DBFField[0:i+1].lower():
+                                    match_count += 1
+                            if match_count > 2:
+                                matching_field = shp_att_name
+                                break
+
+                    if matching_field is not None and matching_field not in source_field_col_data:
+                        source_field_col_data.append(matching_field)
+                    else:
+                        source_field_col_data.append(self.no_match_use_default)
+
+        target_source_combined = zip(target_field_col_data, source_field_col_data)
+        table_data = [[item[0], item[1]] for item in target_source_combined]
+        cmb_data = shp_file_attribute_names
+        if self.field_match_table_wizard is None:
+            self.field_match_table_wizard = TableWidget(table_data=table_data, table_header=table_headers,
+                                                        cmb_data=cmb_data)
+        else:
+            self.v_set_fields_layout.removeWidget(self.field_match_table_wizard)
+            self.field_match_table_wizard = TableWidget(table_data=table_data, table_header=table_headers,
+                                                        cmb_data=cmb_data)
+        self.v_set_fields_layout.addWidget(self.field_match_table_wizard)
+        conn.close()
 
     def show_add_network_dlg(self):
         graip_db_file = self.wizard.line_edit_mdb_file.text()
@@ -1045,13 +1113,16 @@ def populate_drain_type_combobox(graip_db_file, dp_type_combo_box):
     cursor = conn.cursor()
     drain_point_def_rows = cursor.execute("SELECT DrainTypeName FROM DrainTypeDefinitions").fetchall()
     drain_point_types = [row.DrainTypeName for row in drain_point_def_rows]
+    dp_type_combo_box.blockSignals(True)
     dp_type_combo_box.addItems(drain_point_types)
+    dp_type_combo_box.blockSignals(False)
     conn.close()
     return dp_type_combo_box
 
 
 def set_index_dp_type_combo_box(dp_shp_file, dp_type_combo_box):
     dp_shp_file_name = os.path.basename(dp_shp_file)
+    dp_type_combo_box.blockSignals(True)
 
     matching_index = 0
     for index in range(dp_type_combo_box.count()):
@@ -1063,11 +1134,13 @@ def set_index_dp_type_combo_box(dp_shp_file, dp_type_combo_box):
 
         if no_char_match > 2:
             dp_type_combo_box.setCurrentIndex(index)
+            dp_type_combo_box.blockSignals(False)
             return dp_type_combo_box
         if no_char_match == 1:
             matching_index = index
 
     dp_type_combo_box.setCurrentIndex(matching_index)
+    dp_type_combo_box.blockSignals(False)
     return dp_type_combo_box
 
 

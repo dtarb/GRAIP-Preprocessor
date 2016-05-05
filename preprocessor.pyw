@@ -428,67 +428,13 @@ class DrainPointPage(utils.ImportWizardPage):
     def initializePage(self, *args, **kwargs):
         self.progress_bar.setValue(0)
         graip_db_file = self.wizard.line_edit_mdb_file.text()
-        conn = pyodbc.connect(utils.MS_ACCESS_CONNECTION % graip_db_file)
-        cursor = conn.cursor()
-        # populate the field match table based on the drain point shapefile being imported
+
         if self.field_match_table_wizard is None:
             dp_shapefile = self.line_edit_imported_file.text()
-            shp_file_attribute_names = utils.get_shapefile_attribute_column_names(dp_shapefile)
-            self.no_match_use_default = '<No Match Use Default>'
-            shp_file_attribute_names = [self.no_match_use_default] + shp_file_attribute_names
-            table_headers = ['Target Field', 'Matching Source Field']
             self.dp_type_combo_box = utils.populate_drain_type_combobox(graip_db_file, self.dp_type_combo_box)
-            # set the current index for the drain type combo box
             self.dp_type_combo_box = utils.set_index_dp_type_combo_box(dp_shapefile, self.dp_type_combo_box)
-            drain_type_name = self.dp_type_combo_box.currentText()
-            drain_type_def_row = cursor.execute("SELECT DrainTypeID FROM DrainTypeDefinitions "
-                                                "WHERE DrainTypeName = ?", drain_type_name).fetchone()
-
-            # find the target field names in the database corresponding to the shapefile being imported
-            field_name_rows = cursor.execute("SELECT DBField FROM FieldMatches "
-                                             "WHERE AttTableID = ?", drain_type_def_row.DrainTypeID).fetchall()
-            target_field_col_data = [row.DBField for row in field_name_rows]
-
-            source_field_col_data = []
-            for target_fld in target_field_col_data:
-                source_field_row = cursor.execute("SELECT DBFField FROM FieldMatches "
-                                                  "WHERE DBField = ?", target_fld).fetchone()
-                if source_field_row:
-                    # check if the DBFField value matches (if at least first 3 chars need to match)
-                    # with any of the values in the combobox used for the 2nd column of the table
-                    found_match = False
-                    for shp_att_name in shp_file_attribute_names:
-                        if shp_att_name.lower() == source_field_row.DBFField.lower():
-                            source_field_col_data.append(source_field_row.DBFField)
-                            found_match = True
-                            break
-
-                    if not found_match:
-                        matching_field = None
-                        for shp_att_name in shp_file_attribute_names:
-                            if len(shp_att_name) > 2 and len(source_field_row.DBFField) > 2:
-                                # match first 3 characters
-                                match_count = 0
-                                for i in range(len(shp_att_name)):
-                                    if shp_att_name[0:i+1].lower() == source_field_row.DBFField[0:i+1].lower():
-                                        match_count += 1
-                                if match_count > 2:
-                                    matching_field = shp_att_name
-                                    break
-
-                        if matching_field is not None and matching_field not in source_field_col_data:
-                            source_field_col_data.append(matching_field)
-                        else:
-                            source_field_col_data.append(self.no_match_use_default)
-
-            target_source_combined = zip(target_field_col_data, source_field_col_data)
-            table_data = [[item[0], item[1]] for item in target_source_combined]
-            cmb_data = shp_file_attribute_names
-            self.field_match_table_wizard = utils.TableWidget(table_data=table_data, table_header=table_headers,
-                                                              cmb_data=cmb_data)
-
-            self.v_set_fields_layout.addWidget(self.field_match_table_wizard)
-            conn.close()
+            # populate the field match table based on the drain point shapefile being imported
+            self.populate_matching_fields_table()
 
     def validatePage(self, *args, **kwargs):
         # this function is executed when next button is selected
