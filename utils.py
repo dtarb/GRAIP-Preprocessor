@@ -1129,7 +1129,7 @@ def set_index_dp_type_combo_box(dp_shp_file, dp_type_combo_box):
         drain_type_name = dp_type_combo_box.itemText(index)
         no_char_match = 0
         for i in range(1, len(drain_type_name)):
-            if drain_type_name[0:i] == dp_shp_file_name[0:i]:
+            if drain_type_name[0:i].lower() == dp_shp_file_name[0:i].lower():
                 no_char_match += 1
 
         if no_char_match > 2:
@@ -1180,7 +1180,19 @@ def is_data_type_match(graip_db_file, table_name, col_name, data_value):
                 return type(data_value) is str
             elif row.data_type in (pyodbc.SQL_TINYINT, pyodbc.SQL_SMALLINT, pyodbc.SQL_INTEGER, pyodbc.SQL_BIGINT,
                                    pyodbc.SQL_NUMERIC):
-                return type(data_value) is int or type(data_value) is float
+                if type(data_value) is not int and type(data_value) is not float:
+                    try:
+                        int(data_value)
+                        return True
+                    except:
+                        try:
+                            float(data_value)
+                            return True
+                        except:
+                            return False
+                else:
+                    return True
+
             elif row.data_type in (pyodbc.SQL_DECIMAL, pyodbc.SQL_FLOAT, pyodbc.SQL_DOUBLE, pyodbc.SQL_REAL):
                 return type(data_value) is float or type(data_value) is int
             elif row.data_type in (pyodbc.SQL_TYPE_DATE, pyodbc.SQL_TYPE_TIMESTAMP):
