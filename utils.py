@@ -1,3 +1,4 @@
+import sys
 import os
 import time
 
@@ -1261,3 +1262,16 @@ def get_items_from_list_box(list_box):
         item = list_box.item(i).text()
         item_list.append(item)
     return item_list
+
+
+def handle_exception(exception):
+    msg_box = GraipMessageBox()
+    msg_box.setWindowTitle("Error")
+    msg_box.setIcon(QMessageBox.Critical)
+    err_message = exception.message
+    if len(err_message) == 0:
+        err_message = sys.exc_info()[1][1]
+    else:
+        err_message += "\n" + sys.exc_info()[1][1]
+    msg_box.setText(err_message)
+    msg_box.exec_()
