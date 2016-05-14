@@ -89,15 +89,15 @@ class FileSetupPage(QWizardPage):
         self.dem_file_label.setWordWrap(True)
 
         v_layout_dem_file = QVBoxLayout()
-        #v_layout_dem_file.addWidget(self.dem_file_label)
+        # v_layout_dem_file.addWidget(self.dem_file_label)
         h_layout_dem_files = QHBoxLayout()
         self.line_edit_dem_file = QLineEdit()
         self.btn_browse_dem_file = QPushButton('....')
         # connect the browse button to the function
         self.btn_browse_dem_file.clicked.connect(self.browse_dem_file)
 
-        #h_layout_dem_files.addWidget(self.line_edit_dem_file)
-        #h_layout_dem_files.addWidget(self.btn_browse_dem_file)
+        # h_layout_dem_files.addWidget(self.line_edit_dem_file)
+        # h_layout_dem_files.addWidget(self.btn_browse_dem_file)
         v_layout_dem_file.addLayout(h_layout_dem_files)
         layout_input_files.addLayout(v_layout_dem_file)
 
@@ -179,9 +179,6 @@ class FileSetupPage(QWizardPage):
         if self.wizard.currentId() == 0:
             if len(self.line_edit_mdb_file.text().strip()) == 0:
                 return False
-
-            # elif len(self.line_edit_dem_file.text().strip()) == 0:
-            #     return False
             elif self.lst_widget_rd_shp_files.count() == 0:
                 return False
             elif self.lst_widget_dp_shp_files.count() == 0:
@@ -214,11 +211,6 @@ class FileSetupPage(QWizardPage):
             msg_box.exec_()
             return False
 
-        # if len(self.line_edit_dem_file.text().strip()) == 0:
-        #     msg_box.setText("DEM file is required")
-        #     msg_box.exec_()
-        #     return False
-
         if self.lst_widget_rd_shp_files.count() == 0:
             msg_box.setText("At least one road shapefile is required")
             msg_box.exec_()
@@ -228,17 +220,6 @@ class FileSetupPage(QWizardPage):
             msg_box.setText("At least one drain points shapefile is required")
             msg_box.exec_()
             return False
-
-        # check that not same file have been selected for both as DrainPoints as well as RoadLines
-        # dp_files = utils.get_items_from_list_box(self.lst_widget_dp_shp_files)
-        # rd_files = utils.get_items_from_list_box(self.lst_widget_rd_shp_files)
-        # common_shp_files = [shp_file for shp_file in rd_files if shp_file in dp_files]
-        # if common_shp_files:
-        #     msg_box.setText("One or more file selected for RodLines also have been selected for DrainPoints")
-        #     msg_box.exec_()
-        #     self.wizard.setStartId(0)
-        #     self.wizard.restart()
-        #     return False
 
         dp_shp_file_list = []
         shp_file_count = self.lst_widget_dp_shp_files.count()
@@ -276,7 +257,7 @@ class FileSetupPage(QWizardPage):
 
         # insert data to FileSetup table
         db_file = self.line_edit_mdb_file.text()
-        dem_file_path = self.line_edit_dem_file.text()
+        # dem_file_path = self.line_edit_dem_file.text()
         dem_file_path = "path will be set in future version"
         dp_shp_files = ','.join(dp_shp_file_list)
         rd_shp_files = ','.join(rd_shp_file_list)
@@ -441,10 +422,7 @@ class DrainPointPage(utils.ImportWizardPage):
         # here we should be processing the currently imported drain shape file
         # during the processing if we find a value that's not in the definitions table we need
         # to show the DefineValueDialog
-        #get general drainpoint table joined with specific drainpoint table from the access database
-        #selectStmt = "SELECT * FROM DrainPoints," & impVar.attTableNames & _
-        # " WHERE DrainPoints.GRAIPDID=" & impVar.attTableNames & _
-        # ".GRAIPDID ORDER BY DrainPoints.GRAIPDID ASC"
+
         is_error = False
         try:
             graip_db_file = self.wizard.line_edit_mdb_file.text()
@@ -459,15 +437,6 @@ class DrainPointPage(utils.ImportWizardPage):
             drain_type_def_row = cursor.execute("SELECT DrainTypeID, TableName FROM DrainTypeDefinitions WHERE "
                                                 "DrainTypeName=?", drain_type_name).fetchone()
             if drain_type_def_row:
-                # data for the fields (GRAIPDID, DrainTypeID, CDate, CTime, VehicleID, DrainID, StreamConnectID, OrphanID,
-                # DischargeToID) needs to be written to the DrainPoints table, Data for other fields need to be written to
-                # the corresponding matching drainpoint attribute table. Data first need to be written to the DrainPoints
-                # table then to the matching attribute table
-
-                # add
-                # cursor.execute("SELECT * FROM DrainPoints, ? WHERE DrainPoints.GRAIPDID=?", drain_type_def_row.TableName,
-                #                drain_type_def_row.TableName + '.GRAIPDID')
-
                 # check if the drainpoints file has been processed before
                 update_main_dp_table = False
                 dp_shapefile = self.line_edit_imported_file.text()
@@ -518,15 +487,6 @@ class DrainPointPage(utils.ImportWizardPage):
 
                 dp_row_data = {'GRAIPDID': graipid, 'DrainTypeID': drain_type_def_row.DrainTypeID,
                                'StreamConnectID': stream_connect_id, 'Comments': ''}
-
-                # dp_row_data = {'GRAIPDID': graipid}
-
-                # if 'DrainTypeID' in dp_target_column_names:
-                #     dp_row_data['DrainTypeID'] = drain_type_def_row.DrainTypeID
-                # if 'StreamConnectID' in dp_target_column_names:
-                #     dp_row_data['StreamConnectID'] = stream_connect_id
-                # if 'Comments' in dp_target_column_names:
-                #     dp_row_data['Comments'] = ""
 
                 dp_att_row_data = {'GRAIPDID': graipid}
 
@@ -686,12 +646,6 @@ class DrainPointPage(utils.ImportWizardPage):
                     insert_sql = "INSERT INTO DrainPoints({col_names}) VALUES {col_values}"
                     insert_sql = insert_sql.format(col_names=col_names, col_values=col_values)
                     cursor.execute(insert_sql)
-                    # cursor.execute("INSERT INTO DrainPoints(GRAIPDID, DrainTypeID, CDate, CTime, VehicleID, "
-                    #                "StreamConnectID, DischargeToID) "
-                    #                "VALUES (?, ?, ?, ?, ?, ?, ?)", dp_row_data['GRAIPDID'],
-                    #                dp_row_data['DrainTypeID'], dp_row_data['CDate'], dp_row_data['CTime'],
-                    #                dp_row_data['VehicleID'], dp_row_data['StreamConnectID'],
-                    #                dp_row_data['DischargeToID'])
                 else:
                     if "GRAIPDID" in dp_row_data:
                         del dp_row_data['GRAIPDID']
@@ -701,17 +655,16 @@ class DrainPointPage(utils.ImportWizardPage):
                     update_sql = "UPDATE DrainPoints SET {}  WHERE GRAIPDID=?".format(col_names)
                     cursor.execute(update_sql, params)
 
-                    # update_sql = "UPDATE DrainPoints SET DrainTypeID=?, CDate=?, CTime=?, VehicleID=?, " \
-                    #              "StreamConnectID=?, DischargeToID=?  WHERE GRAIPDID=?"
-                    # data = (dp_row_data['DrainTypeID'], dp_row_data['CDate'], dp_row_data['CTime'],
-                    #         dp_row_data['VehicleID'], dp_row_data['StreamConnectID'],
-                    #         dp_row_data['DischargeToID'], graipid)
-                    #cursor.execute(update_sql, data)
-
                 # insert data to matching attribute table
                 col_names = ",".join(k for k in dp_att_row_data.keys())
-                col_values = ",".join(str(v) for v in dp_att_row_data.values())
-                insert_sql = "INSERT INTO {table_name}({col_names}) VALUES ({col_values})"
+
+                if len(dp_att_row_data.values()) > 1:
+                    col_values = tuple(dp_att_row_data.values())
+                    insert_sql = "INSERT INTO {table_name}({col_names}) VALUES {col_values}"
+                else:
+                    col_values = dp_att_row_data.values()[0]
+                    insert_sql = "INSERT INTO {table_name}({col_names}) VALUES ({col_values})"
+
                 insert_sql = insert_sql.format(table_name=drain_type_def_row.TableName, col_names=col_names,
                                                col_values=col_values)
                 cursor.execute(insert_sql)
@@ -754,16 +707,12 @@ class DrainPointPage(utils.ImportWizardPage):
                 qApp.processEvents()
             conn.close()
         except (pyodbc.DatabaseError, pyodbc.DataError) as ex:
-            raise Exception(ex.message)
+            is_error = True
+            utils.handle_exception(ex)
         except Exception as ex:
             # TODO: write the error to the log file
-            msg_box = utils.GraipMessageBox()
-            msg_box.setWindowTitle("Error")
-            msg_box.setIcon(QMessageBox.Critical)
-            msg_box.setText(ex.message)
-            msg_box.exec_()
-            print(ex.message)
             is_error = True
+            utils.handle_exception(ex)
         finally:
             if conn and is_error:
                 conn.close()
@@ -783,6 +732,7 @@ class DrainPointPage(utils.ImportWizardPage):
             if not isinstance(prev_page, FileSetupPage):
                 prev_page.progress_bar.setValue(0)
 
+
 class RoadLinePage(utils.ImportWizardPage):
 
     def initializePage(self, *args, **kwargs):
@@ -801,13 +751,6 @@ class RoadLinePage(utils.ImportWizardPage):
             rd_network_values = [row.RoadNetwork for row in rd_network_def_rows]
             self.rd_network_combo_box.addItems(rd_network_values)
             self.update_rd_network_gui_elements()
-
-            # self.dp_type_combo_box = utils.populate_drain_type_combobox(graip_db_file, self.dp_type_combo_box)
-            # # set the current index for the drain type combo box
-            # self.dp_type_combo_box = utils.set_index_dp_type_combo_box(rd_shapefile, self.dp_type_combo_box)
-            # drain_type_name = self.dp_type_combo_box.currentText()
-            # drain_type_def_row = cursor.execute("SELECT DrainTypeID FROM DrainTypeDefinitions "
-            #                                     "WHERE DrainTypeName = ?", drain_type_name).fetchone()
 
             # find the target field names in the database corresponding to the shapefile being imported
             field_name_rows = cursor.execute("SELECT DBField FROM FieldMatches "
@@ -933,13 +876,6 @@ class RoadLinePage(utils.ImportWizardPage):
                                                                              rd_att_value)
                                     if is_type_match:
                                         rd_row_data[field_name] = rd_att_value
-
-                                # else:
-                                #     is_type_match = utils.is_data_type_match(graip_db_file,
-                                #                                              drain_type_def_row.TableName, field_name,
-                                #                                              dp_att_value)
-                                #     if is_type_match:
-                                #         dp_att_row_data[field_name] = dp_att_value
 
                                 if not is_type_match:
                                     # show message describing the mismatch
@@ -1145,17 +1081,12 @@ class RoadLinePage(utils.ImportWizardPage):
             dlg.exec_()
 
         except (pyodbc.DatabaseError, pyodbc.DataError) as ex:
-            raise Exception(ex.message)
-
+            is_error = True
+            utils.handle_exception(ex)
         except Exception as ex:
             # TODO: write the error to the log file
-            msg_box = utils.GraipMessageBox()
-            msg_box.setWindowTitle("Error")
-            msg_box.setIcon(QMessageBox.Critical)
-            msg_box.setText(ex.message)
-            msg_box.exec_()
-            print(ex.message)
             is_error = True
+            utils.handle_exception(ex)
         finally:
             if conn and is_error:
                 conn.close()
