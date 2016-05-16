@@ -363,7 +363,7 @@ class OptionsDialog(QDialog):
         self.form_layout = QFormLayout()
         self.grp_box_processing = QGroupBox("Processing")
         self.radio_btn_uninterrupted = QRadioButton("Uninterrupted")
-        self.radio_btn_step_by_step = QRadioButton("Step by step")
+        self.radio_btn_step_by_step = QRadioButton("Step by step (Manual resolution of invalid/missing data values)")
         # set this radio button as checked
         self.radio_btn_step_by_step.toggle()
         v_layout_processing = QVBoxLayout()
