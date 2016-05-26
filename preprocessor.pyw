@@ -429,7 +429,8 @@ class DrainPointPage(utils.ImportWizardPage):
             conn = pyodbc.connect(utils.MS_ACCESS_CONNECTION % graip_db_file)
             cursor = conn.cursor()
             dp_table_field_names = ['GRAIPDID', 'DrainTypeID', 'CDate', 'CTime', 'VehicleID', 'DrainID',
-                                    'StreamConnectID', 'OrphanID', 'DischargeToID', 'Comments']
+                                    'StreamConnectID', 'OrphanID', 'DischargeToID', 'Comments', 'FillErosion',
+                                    'LinkCascadeID', 'In_Xing_FillID']
 
             drain_type_name = self.dp_type_combo_box.currentText()
             # find drain type attribute table name - this is the table to which we will be writing data in addition
@@ -481,8 +482,7 @@ class DrainPointPage(utils.ImportWizardPage):
                     stream_connect_id = 2
 
                 fld_match_table_model = self.field_match_table_wizard.table_model
-                dp_target_column_names = [str(fld_match_table_model.index(row, 0).data()) for row
-                                          in range(fld_match_table_model.rowCount())]
+
                 # collect data to be inserted to both the DrainPoints table and shapefile specific attribute table
 
                 dp_row_data = {'GRAIPDID': graipid, 'DrainTypeID': drain_type_def_row.DrainTypeID,
@@ -843,8 +843,6 @@ class RoadLinePage(utils.ImportWizardPage):
             # for each drain point in shapefile
             for dp in layer:
                 fld_match_table_model = self.field_match_table_wizard.table_model
-                dp_target_column_names = [str(fld_match_table_model.index(row, 0).data()) for row
-                                          in range(fld_match_table_model.rowCount())]
 
                 # collect data to be inserted to RoadLines table
                 rd_row_data = {'GRAIPRID': graipid, 'Comments': ''}
